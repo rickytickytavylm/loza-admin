@@ -5,28 +5,18 @@
 
   const state = {
     user: null,
+    tab: 'posts',
     summary: null,
     users: [],
     payments: [],
+    feedPosts: [],
+    selectedPostId: '',
     chatRooms: [],
-    editingRoomId: null,
-    roomDraft: emptyRoom(),
-    post: { title: '', body: '', imageUrl: '', preview: '' },
+    selectedRoomId: '',
+    post: { title: '', body: '', imageUrl: '', preview: '', fileName: '' },
     uploading: false,
     status: { post: '', chat: '', error: '' },
   };
-
-  function emptyRoom() {
-    return {
-      slug: '',
-      title: '',
-      description: '',
-      purpose: '',
-      canPost: true,
-      isPremium: false,
-      sortOrder: 0,
-    };
-  }
 
   function esc(value) {
     return String(value ?? '')
@@ -58,8 +48,9 @@
   function renderLogin() {
     app.innerHTML = `<div class="admin-login">
       <form class="admin-card" id="login-form">
+        <img class="login-logo" src="assets/logo.png" alt="Лоза" />
         <h1>Лоза Admin</h1>
-        <p class="muted">Вход для команды клуба · classic</p>
+        <p class="muted">Вход для команды клуба</p>
         <div class="admin-form">
           <label>Email<input id="login-email" value="admin@loza.app" autocomplete="username" /></label>
           <label>Пароль<input id="login-password" type="password" autocomplete="current-password" /></label>
@@ -92,19 +83,49 @@
     };
   }
 
+  function renderTabs() {
+    const tabs = [
+      { id: 'posts', label: 'Посты' },
+      { id: 'users', label: 'Пользователи' },
+      { id: 'payments', label: 'Оплаты' },
+      { id: 'chats', label: 'Чаты' },
+    ];
+    return `<nav class="admin-tabs" aria-label="Разделы">
+      ${tabs.map((tab) => `
+        <button type="button" class="admin-tab${state.tab === tab.id ? ' is-active' : ''}" data-tab="${tab.id}">
+          <span>${tab.label}</span>
+        </button>`).join('')}
+    </nav>`;
+  }
+
   function renderStats() {
     const s = state.summary || {};
-    return `<section class="admin-stats">
-      <article><strong>${s.users ?? '—'}</strong><span>Пользователи</span></article>
-      <article><strong>${s.paidUsers ?? '—'}</strong><span>С оплатой</span></article>
-      <article><strong>${s.pendingPayments ?? '—'}</strong><span>Ждут оплату</span></article>
-      <article><strong>${s.posts ?? '—'}</strong><span>Посты</span></article>
+    if (state.tab === 'posts') {
+      return `<section class="admin-stats admin-stats-compact">
+        <article><strong>${s.posts ?? '—'}</strong><span>Посты</span></article>
+        <article><strong>${s.users ?? '—'}</strong><span>Пользователи</span></article>
+      </section>`;
+    }
+    if (state.tab === 'users') {
+      return `<section class="admin-stats admin-stats-compact">
+        <article><strong>${s.users ?? '—'}</strong><span>Пользователи</span></article>
+        <article><strong>${s.paidUsers ?? '—'}</strong><span>С оплатой</span></article>
+      </section>`;
+    }
+    if (state.tab === 'payments') {
+      return `<section class="admin-stats admin-stats-compact">
+        <article><strong>${s.paidUsers ?? '—'}</strong><span>С оплатой</span></article>
+        <article><strong>${s.pendingPayments ?? '—'}</strong><span>Ждут оплату</span></article>
+      </section>`;
+    }
+    return `<section class="admin-stats admin-stats-compact">
       <article><strong>${s.rooms ?? '—'}</strong><span>Чаты</span></article>
+      <article><strong>${s.users ?? '—'}</strong><span>Пользователи</span></article>
     </section>`;
   }
 
   function renderUsers() {
-    const rows = state.users.map((entry) => {
+    const cards = state.users.map((entry) => {
       const avatar = entry.avatarUrl || '';
       const pay = payLabel(entry.payStatus);
       const sub = entry.subscription;
@@ -112,172 +133,295 @@
         ? `${sub.planName || 'Подписка'} · до ${fmtDate(sub.accessUntil)}`
         : (entry.lastPayment
           ? `${entry.lastPayment.planName || entry.lastPayment.provider} · ${entry.lastPayment.amountRub || '—'} ₽`
-          : '—');
-      return `<tr>
-        <td><div class="admin-user-avatar">${avatar ? `<img src="${esc(avatar)}" alt="" />` : esc((entry.name || '?')[0].toUpperCase())}</div></td>
-        <td>${esc(entry.name)}${entry.hasYandex ? '<span class="admin-badge">Яндекс</span>' : ''}</td>
-        <td><div>${esc(entry.email)}</div><div class="muted">${esc(entry.phone || '—')}</div></td>
-        <td>${esc(entry.role)}</td>
-        <td>
+          : 'Без оплаты');
+      return `<article class="user-card">
+        <div class="user-card-head">
+          <div class="admin-user-avatar">${avatar ? `<img src="${esc(avatar)}" alt="" />` : esc((entry.name || '?')[0].toUpperCase())}</div>
+          <div class="user-card-meta">
+            <strong>${esc(entry.name)}${entry.hasYandex ? '<span class="admin-badge">Яндекс</span>' : ''}</strong>
+            <span>${esc(entry.email)}</span>
+            <span>${entry.phone ? esc(entry.phone) : 'Нет номера'}</span>
+          </div>
           <span class="pay-pill ${pay.cls}">${pay.text}</span>
-          <div class="muted" style="margin-top:4px">${esc(payDetail)}</div>
-        </td>
-        <td>${fmtDate(entry.createdAt)}</td>
-      </tr>`;
+        </div>
+        <div class="user-card-foot">
+          <span>${esc(entry.role)}</span>
+          <span>${esc(payDetail)}</span>
+          <span>${fmtDate(entry.createdAt)}</span>
+        </div>
+      </article>`;
     }).join('');
 
-    return `<section class="admin-card">
-      <h2>Пользователи и оплата</h2>
-      <p class="muted">Статус подписки и последней оплаты. Когда подключим кассу — сюда же лягут свежие платежи.</p>
-      <div class="admin-table-wrap">
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th></th>
-              <th>Имя</th>
-              <th>Email / телефон</th>
-              <th>Роль</th>
-              <th>Оплата</th>
-              <th>Регистрация</th>
-            </tr>
-          </thead>
-          <tbody>${rows || '<tr><td colspan="6" class="muted">Пока нет пользователей</td></tr>'}</tbody>
-        </table>
-      </div>
+    return `<section class="admin-card tab-panel">
+      <h2>Пользователи</h2>
+      <p class="muted">Статус подписки и последней оплаты</p>
+      <div class="user-card-list">${cards || '<p class="muted">Пока нет пользователей</p>'}</div>
     </section>`;
+  }
+
+  function selectedFeedPost() {
+    return state.feedPosts.find((post) => post.id === state.selectedPostId) || null;
   }
 
   function renderPostForm() {
     const p = state.post;
-    return `<section class="admin-card">
-      <h2>Новый пост в ленту PWA</h2>
-      <p class="muted">Текст + картинка. Сразу появится в приложении.</p>
-      <form class="admin-form" id="post-form">
-        <label>Заголовок (необязательно)<input id="post-title" value="${esc(p.title)}" /></label>
-        <label>Текст поста<textarea id="post-body" required rows="5">${esc(p.body)}</textarea></label>
-        <label class="admin-file-label">Картинка<input id="post-file" accept="image/jpeg,image/png,image/webp,image/gif" type="file" /></label>
-        ${(p.preview || p.imageUrl) ? `<div class="admin-image-preview">
-          <img alt="Превью" src="${esc(p.preview || p.imageUrl)}" />
-          <button type="button" id="post-clear-image">Убрать картинку</button>
-        </div>` : ''}
-        <label>Или URL картинки<input id="post-image-url" placeholder="https://…" value="${esc(p.imageUrl)}" /></label>
+    const hasImage = Boolean(p.preview || p.imageUrl);
+    const list = state.feedPosts.map((post) => {
+      const preview = String(post.body || '').replace(/\s+/g, ' ').trim();
+      return `<article class="feed-admin-card">
+        <div class="feed-admin-top">
+          <div>
+            <strong>${esc(post.title || 'Без заголовка')}</strong>
+            <span class="muted">${esc(post.author?.name || 'Лоза')} · ${fmtDateTime(post.createdAt)} · ${post._count?.comments || 0} комм.</span>
+          </div>
+          <div class="feed-admin-actions">
+            <button type="button" data-open-post="${esc(post.id)}">Открыть</button>
+            <button type="button" class="danger-btn" data-del-post="${esc(post.id)}">Удалить</button>
+          </div>
+        </div>
+        ${post.imageUrl ? `<img class="feed-admin-thumb" src="${esc(post.imageUrl)}" alt="" />` : ''}
+        <p>${esc(preview.slice(0, 160))}${preview.length > 160 ? '…' : ''}</p>
+      </article>`;
+    }).join('');
+
+    return `
+      <section class="admin-card tab-panel">
+        <h2>Новый пост</h2>
+        <p class="muted">Текст + картинка. Сразу появится в приложении.</p>
+        <form class="admin-form" id="post-form">
+          <label>Заголовок (необязательно)<input id="post-title" value="${esc(p.title)}" /></label>
+          <label>Текст поста<textarea id="post-body" required rows="6">${esc(p.body)}</textarea></label>
+
+          <div class="image-attach">
+            <input id="post-file" accept="image/jpeg,image/png,image/webp,image/gif" type="file" hidden />
+            <button type="button" class="image-attach-btn${hasImage ? ' has-image' : ''}" id="post-pick-image" ${state.uploading ? 'disabled' : ''}>
+              <span class="image-attach-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                  <rect x="3" y="5" width="18" height="14" rx="3"/>
+                  <circle cx="8.5" cy="10" r="1.5"/>
+                  <path d="m21 15-4.5-4.5L8 19"/>
+                </svg>
+              </span>
+              <span class="image-attach-copy">
+                <strong>${state.uploading ? 'Загружаем…' : hasImage ? 'Картинка выбрана' : 'Прикрепить картинку'}</strong>
+                <em>${hasImage ? esc(p.fileName || 'Готово к публикации') : 'JPG, PNG или WebP до 6 МБ'}</em>
+              </span>
+            </button>
+            ${hasImage ? `<div class="admin-image-preview">
+              <img alt="Превью" src="${esc(p.preview || p.imageUrl)}" />
+              <button type="button" id="post-clear-image">Убрать</button>
+            </div>` : ''}
+          </div>
+
+          <details class="url-details">
+            <summary>Или вставить URL картинки</summary>
+            <label class="url-label"><input id="post-image-url" placeholder="https://…" value="${esc(p.imageUrl)}" /></label>
+          </details>
+
+          ${state.status.post ? `<p class="status">${esc(state.status.post)}</p>` : ''}
+          <button type="submit" ${state.uploading ? 'disabled' : ''}>${state.uploading ? 'Подождите…' : 'Опубликовать'}</button>
+        </form>
+      </section>
+      <section class="admin-card tab-panel">
+        <h2>Все посты</h2>
+        <p class="muted">Редактирование, удаление постов и комментариев</p>
+        <div class="feed-admin-list">${list || '<p class="muted">Постов пока нет</p>'}</div>
+      </section>`;
+  }
+
+  function renderPostEditor(post) {
+    const comments = (post.comments || []).map((comment) => `
+      <article class="feed-comment-card">
+        <div class="feed-comment-top">
+          <strong>${esc(comment.author?.name || 'Участник')}</strong>
+          <time>${fmtDateTime(comment.createdAt)}</time>
+        </div>
+        <p>${esc(comment.body)}</p>
+        <button type="button" class="danger-btn" data-del-comment="${esc(comment.id)}">Удалить комментарий</button>
+      </article>`).join('');
+
+    return `<section class="admin-card tab-panel">
+      <div class="chat-thread-top">
+        <button type="button" class="chat-back-btn" id="post-back">← Назад</button>
+        <div>
+          <h2>Редактирование поста</h2>
+          <p class="muted">${fmtDateTime(post.createdAt)} · ${post._count?.comments || 0} комментариев</p>
+        </div>
+      </div>
+      <form class="admin-form" id="post-edit-form">
+        <label>Заголовок<input id="edit-post-title" value="${esc(post.title || '')}" /></label>
+        <label>Текст<textarea id="edit-post-body" required rows="7">${esc(post.body || '')}</textarea></label>
+        <label>URL картинки<input id="edit-post-image" value="${esc(post.imageUrl || '')}" placeholder="https://…" /></label>
+        ${post.imageUrl ? `<div class="admin-image-preview"><img alt="" src="${esc(post.imageUrl)}" /></div>` : ''}
         ${state.status.post ? `<p class="status">${esc(state.status.post)}</p>` : ''}
-        <button type="submit" ${state.uploading ? 'disabled' : ''}>${state.uploading ? 'Загружаем картинку…' : 'Опубликовать'}</button>
+        <div class="feed-admin-actions">
+          <button type="submit">Сохранить</button>
+          <button type="button" class="danger-btn" id="edit-post-delete">Удалить пост</button>
+        </div>
       </form>
+      <div class="feed-comments-block">
+        <h3>Комментарии</h3>
+        ${comments || '<p class="muted">Комментариев нет</p>'}
+      </div>
     </section>`;
   }
 
   function renderPayments() {
-    const rows = state.payments.map((payment) => `<tr>
-      <td>${fmtDateTime(payment.createdAt)}</td>
-      <td>${esc(payment.user?.name || payment.email || '—')}</td>
-      <td>${esc(payment.provider || '—')}</td>
-      <td>${esc(payment.planName || '—')}${payment.planDays ? ` · ${payment.planDays} дн.` : ''}</td>
-      <td>${payment.amountRub != null ? `${payment.amountRub} ₽` : '—'}</td>
-      <td><span class="pay-pill ${payment.status === 'PAID' ? 'is-active' : payment.status === 'PENDING' ? 'is-pending' : payment.status === 'FAILED' ? 'is-failed' : 'is-none'}">${esc(payment.status)}</span></td>
-    </tr>`).join('');
+    const cards = state.payments.map((payment) => {
+      const pill = payment.status === 'PAID' ? 'is-active' : payment.status === 'PENDING' ? 'is-pending' : payment.status === 'FAILED' ? 'is-failed' : 'is-none';
+      return `<article class="pay-card">
+        <div class="pay-card-top">
+          <strong>${esc(payment.user?.name || payment.email || '—')}</strong>
+          <span class="pay-pill ${pill}">${esc(payment.status)}</span>
+        </div>
+        <div class="pay-card-meta">
+          <span>${esc(payment.provider || '—')}</span>
+          <span>${esc(payment.planName || '—')}${payment.planDays ? ` · ${payment.planDays} дн.` : ''}</span>
+          <span>${payment.amountRub != null ? `${payment.amountRub} ₽` : '—'}</span>
+          <span>${fmtDateTime(payment.createdAt)}</span>
+        </div>
+      </article>`;
+    }).join('');
 
-    return `<section class="admin-card admin-payments">
+    return `<section class="admin-card tab-panel">
       <h2>Платежи</h2>
-      <p class="muted">Лента оплат из бэкенда. Когда подключим ЮKassa/Prodamus — статусы обновятся сами.</p>
-      <div class="admin-table-wrap">
-        <table class="admin-table">
-          <thead>
-            <tr>
-              <th>Дата</th>
-              <th>Пользователь</th>
-              <th>Провайдер</th>
-              <th>План</th>
-              <th>Сумма</th>
-              <th>Статус</th>
-            </tr>
-          </thead>
-          <tbody>${rows || '<tr><td colspan="6" class="muted">Платежей пока нет — кассу подключим следующим шагом</td></tr>'}</tbody>
-        </table>
+      <p class="muted">Когда подключим кассу — статусы обновятся сами</p>
+      <div class="pay-card-list">${cards || '<p class="muted">Платежей пока нет</p>'}</div>
+    </section>`;
+  }
+
+  function selectedRoom() {
+    return state.chatRooms.find((room) => room.id === state.selectedRoomId) || null;
+  }
+
+  function lastMessagePreview(room) {
+    const messages = [...(room.messages || [])].sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+    );
+    const last = messages[0];
+    if (!last) return 'Пока нет сообщений';
+    const name = last.author?.name || 'Участник';
+    const body = String(last.body || '').replace(/\s+/g, ' ').trim();
+    return `${name}: ${body.slice(0, 72)}${body.length > 72 ? '…' : ''}`;
+  }
+
+  function renderChatRoomList() {
+    const rooms = state.chatRooms.map((room) => {
+      const count = room._count?.messages ?? (room.messages || []).length;
+      return `<button type="button" class="chat-room-card" data-open-room="${esc(room.id)}">
+        <div class="chat-room-avatar" aria-hidden="true">${esc((room.title || '?')[0].toUpperCase())}</div>
+        <div class="chat-room-copy">
+          <div class="chat-room-title-row">
+            <strong>${esc(room.title)}</strong>
+            <span>${count}</span>
+          </div>
+          <em>${esc(lastMessagePreview(room))}</em>
+          <div class="chat-room-tags">
+            <i class="${room.canPost ? 'is-open' : 'is-locked'}">${room.canPost ? 'Можно писать' : 'Только чтение'}</i>
+            ${room.isPremium ? '<i class="is-premium">Закрытый</i>' : '<i>Открытый</i>'}
+          </div>
+        </div>
+      </button>`;
+    }).join('');
+
+    return `<section class="admin-card tab-panel">
+      <h2>Чаты клуба</h2>
+      <p class="muted">Откройте чат, чтобы модерировать сообщения</p>
+      ${state.status.chat ? `<p class="status">${esc(state.status.chat)}</p>` : ''}
+      <div class="chat-room-list">${rooms || '<p class="muted">Чатов пока нет</p>'}</div>
+    </section>`;
+  }
+
+  function renderChatThread(room) {
+    const messages = [...(room.messages || [])]
+      .sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        return new Date(a.createdAt) - new Date(b.createdAt);
+      });
+
+    const bubbles = messages.map((message) => {
+      const name = message.author?.name || 'Участник';
+      const initial = (name[0] || '?').toUpperCase();
+      const team = ['OWNER', 'ADMIN', 'CURATOR'].includes(message.author?.role);
+      return `<article class="chat-bubble-card${message.isPinned ? ' is-pinned' : ''}${team ? ' is-team' : ''}">
+        <div class="chat-bubble-avatar">${esc(initial)}</div>
+        <div class="chat-bubble-main">
+          <div class="chat-bubble-head">
+            <strong>${esc(name)}</strong>
+            <time>${fmtDateTime(message.createdAt)}</time>
+          </div>
+          ${message.isPinned ? '<span class="chat-pin-badge">Закреплено</span>' : ''}
+          <p>${esc(message.body)}</p>
+          <div class="chat-bubble-actions">
+            <button type="button" data-pin-message="${esc(message.id)}" data-pinned="${message.isPinned ? '1' : '0'}">${message.isPinned ? 'Открепить' : 'Закрепить'}</button>
+            <button type="button" data-edit-message="${esc(message.id)}">Изменить</button>
+            <button type="button" class="danger" data-del-message="${esc(message.id)}">Удалить</button>
+          </div>
+        </div>
+      </article>`;
+    }).join('') || `<div class="chat-empty">
+      <strong>Пока тихо</strong>
+      <span>Когда участники напишут, сообщения появятся здесь</span>
+    </div>`;
+
+    return `<section class="admin-card tab-panel chat-thread-panel">
+      <div class="chat-thread-top">
+        <button type="button" class="chat-back-btn" id="chat-back">← Назад</button>
+        <div>
+          <h2>${esc(room.title)}</h2>
+          <p class="muted">${room._count?.messages ?? messages.length} сообщений</p>
+        </div>
       </div>
+
+      <div class="chat-room-controls">
+        <label class="chat-switch">
+          <input type="checkbox" id="room-can-post" ${room.canPost ? 'checked' : ''} />
+          <span>Участники могут писать</span>
+        </label>
+        <label class="chat-switch">
+          <input type="checkbox" id="room-premium" ${room.isPremium ? 'checked' : ''} />
+          <span>Только для подписки</span>
+        </label>
+      </div>
+      ${state.status.chat ? `<p class="status">${esc(state.status.chat)}</p>` : ''}
+
+      <div class="chat-thread">${bubbles}</div>
     </section>`;
   }
 
   function renderChats() {
-    const d = state.roomDraft;
-    const rooms = state.chatRooms.map((room) => {
-      const messages = (room.messages || []).map((message) => `<div class="chat-admin-message" data-message-id="${esc(message.id)}">
-        <p><strong>${esc(message.author?.name || 'Участник')}</strong> · ${fmtDateTime(message.createdAt)}</p>
-        <span>${esc(message.body)}</span>
-        <div class="chat-admin-actions">
-          <button type="button" data-edit-message="${esc(message.id)}">Изменить</button>
-          <button type="button" data-pin-message="${esc(message.id)}" data-pinned="${message.isPinned ? '1' : '0'}">${message.isPinned ? 'Открепить' : 'Закрепить'}</button>
-          <button type="button" class="danger" data-del-message="${esc(message.id)}">Удалить</button>
-        </div>
-      </div>`).join('') || '<p class="muted">В этом чате пока нет сообщений.</p>';
+    const room = selectedRoom();
+    if (room) return renderChatThread(room);
+    return renderChatRoomList();
+  }
 
-      return `<article class="chat-admin-room">
-        <header>
-          <div>
-            <strong>${esc(room.title)}</strong>
-            <span>#${esc(room.slug)} · ${room._count?.messages ?? 0} сообщений · ${room.canPost ? 'можно писать' : 'только чтение'}</span>
-          </div>
-          <div class="chat-admin-actions">
-            <button type="button" data-edit-room="${esc(room.id)}">Изменить</button>
-            <button type="button" class="danger" data-del-room="${esc(room.id)}">Удалить</button>
-          </div>
-        </header>
-        <div class="chat-admin-messages">${messages}</div>
-      </article>`;
-    }).join('');
-
-    return `<section class="admin-card admin-chat-manager">
-      <div class="admin-section-head">
-        <div>
-          <h2>Управление чатами</h2>
-          <p class="muted">Комнаты, доступ на отправку и сообщения.</p>
-        </div>
-        <button type="button" id="chat-new">Новый чат</button>
-      </div>
-      <form class="admin-form chat-room-form" id="chat-form">
-        <label>Название<input id="room-title" required value="${esc(d.title)}" /></label>
-        <label>Slug<input id="room-slug" required pattern="[a-z0-9_-]+" value="${esc(d.slug)}" /></label>
-        <label class="full">Описание<input id="room-description" value="${esc(d.description || '')}" /></label>
-        <label>Порядок<input id="room-sort" type="number" min="0" value="${esc(d.sortOrder || 0)}" /></label>
-        <label class="admin-checkbox"><input id="room-can-post" type="checkbox" ${d.canPost ? 'checked' : ''} /> Участники могут писать</label>
-        <label class="admin-checkbox"><input id="room-premium" type="checkbox" ${d.isPremium ? 'checked' : ''} /> Закрытый чат</label>
-        ${state.status.chat ? `<p class="status">${esc(state.status.chat)}</p>` : ''}
-        <button type="submit">${state.editingRoomId ? 'Сохранить чат' : 'Создать чат'}</button>
-      </form>
-      <div class="chat-admin-rooms">${rooms || '<p class="muted">Чатов пока нет</p>'}</div>
-    </section>`;
+  function renderTabContent() {
+    if (state.tab === 'users') return renderUsers();
+    if (state.tab === 'payments') return renderPayments();
+    if (state.tab === 'chats') return renderChats();
+    const post = selectedFeedPost();
+    if (post) return renderPostEditor(post);
+    return renderPostForm();
   }
 
   function renderDashboard() {
     app.innerHTML = `<div class="admin-shell">
       <header class="admin-topbar">
         <div>
-          <strong>Лоза Admin</strong>
-          <p class="muted">${esc(state.user?.name || '')} · ${esc(state.user?.role || '')}</p>
+          <img class="admin-topbar-logo" src="assets/logo.png" alt="Лоза" />
+          <div>
+            <strong>Лоза Admin</strong>
+            <p class="muted">${esc(state.user?.name || '')} · ${esc(state.user?.role || '')}</p>
+          </div>
         </div>
         <button type="button" id="logout-btn">Выйти</button>
       </header>
+      ${renderTabs()}
       ${renderStats()}
-      <div class="admin-grid">
-        ${renderPostForm()}
-        ${renderUsers()}
-      </div>
-      ${renderPayments()}
-      ${renderChats()}
+      <div class="tab-content">${renderTabContent()}</div>
     </div>`;
     bindDashboard();
-  }
-
-  function readRoomDraftFromForm() {
-    return {
-      title: document.getElementById('room-title').value.trim(),
-      slug: document.getElementById('room-slug').value.trim().toLowerCase().replace(/\s+/g, '_'),
-      description: document.getElementById('room-description').value.trim(),
-      purpose: '',
-      sortOrder: Number(document.getElementById('room-sort').value) || 0,
-      canPost: document.getElementById('room-can-post').checked,
-      isPremium: document.getElementById('room-premium').checked,
-    };
   }
 
   function bindDashboard() {
@@ -287,11 +431,92 @@
       render();
     };
 
-    document.getElementById('post-form').onsubmit = async (event) => {
+    app.querySelectorAll('[data-tab]').forEach((btn) => {
+      btn.onclick = () => {
+        const next = btn.dataset.tab;
+        if (next !== 'chats') state.selectedRoomId = '';
+        if (next !== 'posts') state.selectedPostId = '';
+        state.tab = next;
+        render();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+    });
+
+    if (state.tab === 'posts') bindPosts();
+    if (state.tab === 'chats') bindChats();
+  }
+
+  async function reloadFeedPosts() {
+    const payload = await API.feedPosts();
+    state.feedPosts = payload.posts || [];
+  }
+
+  function bindPosts() {
+    const editForm = document.getElementById('post-edit-form');
+    if (editForm) {
+      document.getElementById('post-back')?.addEventListener('click', () => {
+        state.selectedPostId = '';
+        state.status.post = '';
+        render();
+      });
+
+      editForm.onsubmit = async (event) => {
+        event.preventDefault();
+        try {
+          await API.updatePost(state.selectedPostId, {
+            title: document.getElementById('edit-post-title').value.trim() || null,
+            body: document.getElementById('edit-post-body').value.trim(),
+            imageUrl: document.getElementById('edit-post-image').value.trim() || null,
+          });
+          state.status.post = 'Пост сохранён';
+          await reloadFeedPosts();
+          render();
+        } catch (error) {
+          state.status.post = error instanceof Error ? error.message : 'Не удалось сохранить';
+          render();
+        }
+      };
+
+      document.getElementById('edit-post-delete')?.addEventListener('click', async () => {
+        if (!window.confirm('Удалить этот пост вместе с комментариями?')) return;
+        try {
+          await API.deletePost(state.selectedPostId);
+          state.selectedPostId = '';
+          state.status.post = 'Пост удалён';
+          state.summary = await API.summary();
+          await reloadFeedPosts();
+          render();
+        } catch (error) {
+          state.status.post = error instanceof Error ? error.message : 'Не удалось удалить пост';
+          render();
+        }
+      });
+
+      app.querySelectorAll('[data-del-comment]').forEach((btn) => {
+        btn.onclick = async () => {
+          if (!window.confirm('Удалить комментарий?')) return;
+          try {
+            await API.deleteComment(btn.dataset.delComment);
+            state.status.post = 'Комментарий удалён';
+            await reloadFeedPosts();
+            render();
+          } catch (error) {
+            state.status.post = error instanceof Error ? error.message : 'Не удалось удалить комментарий';
+            render();
+          }
+        };
+      });
+      return;
+    }
+
+    const form = document.getElementById('post-form');
+    if (!form) return;
+
+    form.onsubmit = async (event) => {
       event.preventDefault();
       state.post.title = document.getElementById('post-title').value;
       state.post.body = document.getElementById('post-body').value;
-      state.post.imageUrl = document.getElementById('post-image-url').value.trim();
+      state.post.imageUrl = document.getElementById('post-image-url')?.value.trim() || state.post.imageUrl;
       state.status.post = '';
       try {
         await API.createPost({
@@ -299,9 +524,10 @@
           body: state.post.body.trim(),
           imageUrl: state.post.imageUrl || undefined,
         });
-        state.post = { title: '', body: '', imageUrl: '', preview: '' };
-        state.status.post = 'Пост опубликован в ленте PWA';
+        state.post = { title: '', body: '', imageUrl: '', preview: '', fileName: '' };
+        state.status.post = 'Пост опубликован в ленте';
         state.summary = await API.summary();
+        await reloadFeedPosts();
         render();
       } catch (error) {
         state.status.post = error instanceof Error ? error.message : 'Ошибка публикации';
@@ -310,12 +536,15 @@
     };
 
     const fileInput = document.getElementById('post-file');
-    if (fileInput) {
+    const pickBtn = document.getElementById('post-pick-image');
+    if (pickBtn && fileInput) {
+      pickBtn.onclick = () => fileInput.click();
       fileInput.onchange = async () => {
         const file = fileInput.files?.[0];
         if (!file) return;
         state.uploading = true;
         state.post.preview = URL.createObjectURL(file);
+        state.post.fileName = file.name;
         state.status.post = '';
         render();
         try {
@@ -325,6 +554,7 @@
         } catch (error) {
           state.post.preview = '';
           state.post.imageUrl = '';
+          state.post.fileName = '';
           state.status.post = error instanceof Error ? error.message : 'Не удалось загрузить картинку';
         } finally {
           state.uploading = false;
@@ -336,90 +566,93 @@
     document.getElementById('post-clear-image')?.addEventListener('click', () => {
       state.post.imageUrl = '';
       state.post.preview = '';
+      state.post.fileName = '';
       render();
     });
 
     document.getElementById('post-image-url')?.addEventListener('input', (event) => {
       state.post.imageUrl = event.target.value;
-      state.post.preview = '';
+      if (event.target.value) state.post.preview = '';
     });
 
-    document.getElementById('chat-new').onclick = () => {
-      state.editingRoomId = null;
-      state.roomDraft = emptyRoom();
-      state.status.chat = '';
-      render();
-    };
-
-    document.getElementById('chat-form').onsubmit = async (event) => {
-      event.preventDefault();
-      state.roomDraft = readRoomDraftFromForm();
-      state.status.chat = '';
-      try {
-        if (state.editingRoomId) await API.updateChatRoom(state.editingRoomId, state.roomDraft);
-        else await API.createChatRoom(state.roomDraft);
-        state.editingRoomId = null;
-        state.roomDraft = emptyRoom();
-        state.status.chat = 'Настройки чата сохранены';
-        await reloadChats();
-        state.summary = await API.summary();
-        render();
-      } catch (error) {
-        state.status.chat = error instanceof Error ? error.message : 'Не удалось сохранить чат';
-        render();
-      }
-    };
-
-    app.querySelectorAll('[data-edit-room]').forEach((btn) => {
+    app.querySelectorAll('[data-open-post]').forEach((btn) => {
       btn.onclick = () => {
-        const room = state.chatRooms.find((item) => item.id === btn.dataset.editRoom);
-        if (!room) return;
-        state.editingRoomId = room.id;
-        state.roomDraft = {
-          slug: room.slug,
-          title: room.title,
-          description: room.description || '',
-          purpose: room.purpose || '',
-          isPremium: Boolean(room.isPremium),
-          canPost: Boolean(room.canPost),
-          sortOrder: room.sortOrder || 0,
-        };
-        state.status.chat = '';
+        state.selectedPostId = btn.dataset.openPost;
+        state.status.post = '';
         render();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
       };
     });
 
-    app.querySelectorAll('[data-del-room]').forEach((btn) => {
+    app.querySelectorAll('[data-del-post]').forEach((btn) => {
       btn.onclick = async () => {
-        if (!window.confirm('Удалить чат и все его сообщения?')) return;
+        if (!window.confirm('Удалить этот пост?')) return;
         try {
-          await API.deleteChatRoom(btn.dataset.delRoom);
-          if (state.editingRoomId === btn.dataset.delRoom) {
-            state.editingRoomId = null;
-            state.roomDraft = emptyRoom();
-          }
-          await reloadChats();
+          await API.deletePost(btn.dataset.delPost);
+          state.status.post = 'Пост удалён';
           state.summary = await API.summary();
+          await reloadFeedPosts();
           render();
         } catch (error) {
-          state.status.chat = error instanceof Error ? error.message : 'Не удалось удалить чат';
+          state.status.post = error instanceof Error ? error.message : 'Не удалось удалить пост';
           render();
         }
       };
     });
+  }
+
+  function bindChats() {
+    app.querySelectorAll('[data-open-room]').forEach((btn) => {
+      btn.onclick = () => {
+        state.selectedRoomId = btn.dataset.openRoom;
+        state.status.chat = '';
+        render();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      };
+    });
+
+    document.getElementById('chat-back')?.addEventListener('click', () => {
+      state.selectedRoomId = '';
+      state.status.chat = '';
+      render();
+    });
+
+    const canPost = document.getElementById('room-can-post');
+    const premium = document.getElementById('room-premium');
+    const room = selectedRoom();
+
+    async function saveRoomFlags() {
+      if (!room || !canPost || !premium) return;
+      try {
+        await API.updateChatRoom(room.id, {
+          canPost: canPost.checked,
+          isPremium: premium.checked,
+        });
+        state.status.chat = 'Настройки чата сохранены';
+        await reloadChats();
+        render();
+      } catch (error) {
+        state.status.chat = error instanceof Error ? error.message : 'Не удалось сохранить';
+        render();
+      }
+    }
+
+    canPost?.addEventListener('change', saveRoomFlags);
+    premium?.addEventListener('change', saveRoomFlags);
 
     app.querySelectorAll('[data-edit-message]').forEach((btn) => {
       btn.onclick = async () => {
         const messageId = btn.dataset.editMessage;
         let current = '';
-        state.chatRooms.forEach((room) => {
-          const found = (room.messages || []).find((message) => message.id === messageId);
+        state.chatRooms.forEach((item) => {
+          const found = (item.messages || []).find((message) => message.id === messageId);
           if (found) current = found.body;
         });
         const body = window.prompt('Текст сообщения', current);
         if (body === null || !body.trim()) return;
         try {
           await API.updateChatMessage(messageId, { body: body.trim() });
+          state.status.chat = 'Сообщение обновлено';
           await reloadChats();
           render();
         } catch (error) {
@@ -449,6 +682,7 @@
         if (!window.confirm('Удалить это сообщение?')) return;
         try {
           await API.deleteChatMessage(btn.dataset.delMessage);
+          state.status.chat = 'Сообщение удалено';
           await reloadChats();
           render();
         } catch (error) {
@@ -465,16 +699,18 @@
   }
 
   async function loadDashboard() {
-    const [summary, users, payments, chats] = await Promise.all([
+    const [summary, users, payments, chats, feed] = await Promise.all([
       API.summary(),
       API.users(),
       API.payments().catch(() => ({ payments: [] })),
       API.chatRooms(),
+      API.feedPosts().catch(() => ({ posts: [] })),
     ]);
     state.summary = summary;
     state.users = users.users || [];
     state.payments = payments.payments || [];
     state.chatRooms = chats.rooms || [];
+    state.feedPosts = feed.posts || [];
   }
 
   function render() {

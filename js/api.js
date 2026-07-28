@@ -34,8 +34,11 @@
       ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
       ...(init && init.headers ? init.headers : {}),
     };
+    // file:// + credentials:include breaks CORS in Firefox even when API allows Origin null.
+    // Admin auth is Bearer token in localStorage — cookies are not required.
+    const fromFile = String(window.location.protocol || '') === 'file:';
     const response = await fetch(`${API_URL}${path}`, {
-      credentials: 'include',
+      credentials: fromFile ? 'omit' : 'include',
       ...init,
       headers,
     });
@@ -79,6 +82,13 @@
       request(`/admin/chat/messages/${messageId}`, { method: 'DELETE' }),
     createPost: (data) =>
       request('/feed', { method: 'POST', body: JSON.stringify(data) }),
+    feedPosts: () => request('/admin/feed'),
+    updatePost: (postId, data) =>
+      request(`/admin/feed/${postId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    deletePost: (postId) =>
+      request(`/admin/feed/${postId}`, { method: 'DELETE' }),
+    deleteComment: (commentId) =>
+      request(`/admin/feed/comments/${commentId}`, { method: 'DELETE' }),
     uploadImage: async (file) => {
       const body = new FormData();
       body.append('file', file);
