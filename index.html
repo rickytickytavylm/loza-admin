@@ -3,13 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f6f3fa" />
     <title>Лоза — админка</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Unbounded:wght@500;600&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="css/styles.css" />
     <script src="config.js"></script>
   </head>
   <body>
     <div id="app" class="app">
-      <div id="boot" class="boot">Загрузка…</div>
+      <div id="boot" class="boot-screen" aria-live="polite" aria-busy="true">
+        <img class="boot-mark" src="assets/logo.png" alt="Лоза" />
+        <div class="boot-spinner" aria-hidden="true"></div>
+        <strong>Лоза Admin</strong>
+        <span>Открываем панель…</span>
+      </div>
     </div>
     <script src="js/api.js" defer></script>
     <script src="js/app.js" defer></script>

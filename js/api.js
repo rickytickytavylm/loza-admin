@@ -94,5 +94,15 @@
       body.append('file', file);
       return request('/admin/upload', { method: 'POST', body });
     },
+    health: () => request('/health'),
+    grantAccess: (userId, data) =>
+      request(`/admin/users/${userId}/grant`, { method: 'POST', body: JSON.stringify(data) }),
+    updateUser: (userId, data) =>
+      request(`/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    announce: (data) =>
+      request('/admin/announce', { method: 'POST', body: JSON.stringify(data) }),
+    movies: () => request('/admin/movies'),
+    updateMovie: (movieId, data) =>
+      request(`/admin/movies/${movieId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   };
 })();

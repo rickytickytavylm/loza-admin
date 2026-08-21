@@ -5,17 +5,23 @@
 
   const state = {
     user: null,
-    tab: 'posts',
+    tab: 'overview',
     summary: null,
     users: [],
     payments: [],
     feedPosts: [],
+    movies: [],
     selectedPostId: '',
+    selectedMovieId: '',
     chatRooms: [],
     selectedRoomId: '',
+    userQuery: '',
+    userFilter: 'all',
+    announce: { body: '', pin: true },
     post: { title: '', body: '', imageUrl: '', preview: '', fileName: '' },
     uploading: false,
-    status: { post: '', chat: '', error: '' },
+    live: { ok: null, checkedAt: '' },
+    status: { post: '', chat: '', user: '', movie: '', announce: '', error: '' },
   };
 
   function esc(value) {
@@ -45,14 +51,30 @@
     return { text: 'Нет оплаты', cls: 'is-none' };
   }
 
+  function liveChip() {
+    if (state.live.ok === true) return '<span class="live-chip"><i></i>Timeweb онлайн</span>';
+    if (state.live.ok === false) return '<span class="live-chip is-down"><i></i>Сервер недоступен</span>';
+    return '<span class="live-chip"><i></i>Проверяем сервер…</span>';
+  }
+
+  async function pingLive() {
+    try {
+      await API.health();
+      state.live = { ok: true, checkedAt: new Date().toISOString() };
+    } catch {
+      state.live = { ok: false, checkedAt: new Date().toISOString() };
+    }
+  }
+
   function renderLogin() {
     app.innerHTML = `<div class="admin-login">
       <form class="admin-card" id="login-form">
         <img class="login-logo" src="assets/logo.png" alt="Лоза" />
         <h1>Лоза Admin</h1>
-        <p class="muted">Вход для команды клуба</p>
+        <p class="muted">Панель команды · напрямую к api.loza-club.ru</p>
+        <div style="text-align:center;margin:8px 0 4px">${liveChip()}</div>
         <div class="admin-form">
-          <label>Email<input id="login-email" value="admin@loza.app" autocomplete="username" /></label>
+          <label>Email<input id="login-email" placeholder="email команды" autocomplete="username" /></label>
           <label>Пароль<input id="login-password" type="password" autocomplete="current-password" /></label>
           <p class="error" id="login-error" hidden></p>
           <button type="submit">Войти</button>
@@ -85,8 +107,10 @@
 
   function renderTabs() {
     const tabs = [
+      { id: 'overview', label: 'Обзор' },
+      { id: 'announce', label: 'Лента' },
       { id: 'posts', label: 'Посты' },
-      { id: 'users', label: 'Пользователи' },
+      { id: 'users', label: 'Люди' },
       { id: 'payments', label: 'Оплаты' },
       { id: 'chats', label: 'Чаты' },
     ];
@@ -100,32 +124,77 @@
 
   function renderStats() {
     const s = state.summary || {};
-    if (state.tab === 'posts') {
-      return `<section class="admin-stats admin-stats-compact">
-        <article><strong>${s.posts ?? '—'}</strong><span>Посты</span></article>
-        <article><strong>${s.users ?? '—'}</strong><span>Пользователи</span></article>
-      </section>`;
-    }
-    if (state.tab === 'users') {
-      return `<section class="admin-stats admin-stats-compact">
-        <article><strong>${s.users ?? '—'}</strong><span>Пользователи</span></article>
-        <article><strong>${s.paidUsers ?? '—'}</strong><span>С оплатой</span></article>
-      </section>`;
-    }
-    if (state.tab === 'payments') {
-      return `<section class="admin-stats admin-stats-compact">
-        <article><strong>${s.paidUsers ?? '—'}</strong><span>С оплатой</span></article>
-        <article><strong>${s.pendingPayments ?? '—'}</strong><span>Ждут оплату</span></article>
-      </section>`;
-    }
+    const cards = {
+      overview: [
+        [s.users, 'Пользователи'],
+        [s.paidUsers, 'С доступом'],
+        [s.newUsersWeek, 'Новые за неделю'],
+        [s.messagesWeek, 'Сообщений за неделю'],
+      ],
+      announce: [[s.rooms, 'Чаты'], [s.paidUsers, 'С доступом']],
+      posts: [[s.posts, 'Посты'], [s.users, 'Пользователи']],
+      users: [[s.users, 'Пользователи'], [s.paidUsers, 'С оплатой']],
+      payments: [[s.paidUsers, 'С оплатой'], [s.pendingPayments, 'Ждут оплату']],
+      chats: [[s.rooms, 'Чаты'], [s.messagesWeek, 'Сообщений / 7дн']],
+      movies: [[s.movies, 'Фильмы'], [s.content, 'Материалы']],
+    }[state.tab] || [[s.users, 'Пользователи'], [s.paidUsers, 'С доступом']];
+
     return `<section class="admin-stats admin-stats-compact">
-      <article><strong>${s.rooms ?? '—'}</strong><span>Чаты</span></article>
-      <article><strong>${s.users ?? '—'}</strong><span>Пользователи</span></article>
+      ${cards.map(([value, label]) => `<article><strong>${value ?? '—'}</strong><span>${label}</span></article>`).join('')}
     </section>`;
   }
 
+  function renderOverview() {
+    const ops = state.summary?.ops || {};
+    const ai = ops.ai || {};
+    const plans = ops.plans || [];
+    return `<section class="admin-card tab-panel">
+      <h2>Сервер Timeweb</h2>
+      <p class="muted">Админка уже пишет и читает живой API клуба. После деплоя backend новые кнопки (доступ, блок, Лента) заработают сразу.</p>
+      <div class="ops-grid">
+        <article class="ops-card">
+          <strong>${state.live.ok ? 'API отвечает' : 'API не отвечает'}</strong>
+          <span>${esc(API.API_URL)}<br />${ops.time ? `сверка ${fmtDateTime(ops.time)}` : 'ждём ответ summary'}</span>
+        </article>
+        <article class="ops-card">
+          <strong>${ops.yookassaReady ? 'ЮKassa готова' : 'Оплата: ' + (ops.paymentProvider || 'mock')}</strong>
+          <span>${ops.yookassaReady ? 'Боевые платежи включены' : 'Касса ещё в тестовом режиме'}</span>
+        </article>
+        <article class="ops-card">
+          <strong>AI ${ai.deepseek || ai.gemini ? 'подключён' : 'не настроен'}</strong>
+          <span>Провайдер: ${esc(ai.provider || '—')} · DeepSeek ${ai.deepseek ? 'да' : 'нет'} · Gemini ${ai.gemini ? 'да' : 'нет'}</span>
+        </article>
+        <article class="ops-card">
+          <strong>${ops.pushEnabled ? 'Push включены' : 'Push выключены'}</strong>
+          <span>Уведомления в PWA о новых сообщениях и объявлениях</span>
+        </article>
+      </div>
+    </section>
+    <section class="admin-card tab-panel">
+      <h2>Тарифы на сервере</h2>
+      <div class="ops-grid">
+        ${plans.map((plan) => `
+          <article class="ops-card">
+            <strong>${esc(plan.planName)}</strong>
+            <span>${plan.priceRub} ₽ / ${plan.planDays} дн. · ${esc(plan.code)}</span>
+          </article>`).join('') || '<p class="muted">Тарифы подтянутся после обновления backend</p>'}
+      </div>
+    </section>`;
+  }
+
+  function filteredUsers() {
+    const q = state.userQuery.trim().toLowerCase();
+    return state.users.filter((entry) => {
+      if (state.userFilter === 'paid' && entry.payStatus !== 'active') return false;
+      if (state.userFilter === 'none' && entry.payStatus === 'active') return false;
+      if (state.userFilter === 'blocked' && !entry.blockedAt) return false;
+      if (!q) return true;
+      return `${entry.name} ${entry.email} ${entry.phone || ''}`.toLowerCase().includes(q);
+    });
+  }
+
   function renderUsers() {
-    const cards = state.users.map((entry) => {
+    const cards = filteredUsers().map((entry) => {
       const avatar = entry.avatarUrl || '';
       const pay = payLabel(entry.payStatus);
       const sub = entry.subscription;
@@ -138,7 +207,7 @@
         <div class="user-card-head">
           <div class="admin-user-avatar">${avatar ? `<img src="${esc(avatar)}" alt="" />` : esc((entry.name || '?')[0].toUpperCase())}</div>
           <div class="user-card-meta">
-            <strong>${esc(entry.name)}${entry.hasYandex ? '<span class="admin-badge">Яндекс</span>' : ''}</strong>
+            <strong>${esc(entry.name)}${entry.hasYandex ? '<span class="admin-badge">Яндекс</span>' : ''}${entry.blockedAt ? '<span class="admin-badge" style="background:#c53d61">блок</span>' : ''}</strong>
             <span>${esc(entry.email)}</span>
             <span>${entry.phone ? esc(entry.phone) : 'Нет номера'}</span>
           </div>
@@ -149,13 +218,54 @@
           <span>${esc(payDetail)}</span>
           <span>${fmtDate(entry.createdAt)}</span>
         </div>
+        <div class="user-actions">
+          <select data-grant-plan="${esc(entry.id)}">
+            <option value="library_30">Медиатека. Теория</option>
+            <option value="club_30">Клуб 30 дней</option>
+            <option value="club_90">Клуб 90 дней</option>
+            <option value="club_plus_30">Клуб Плюс</option>
+          </select>
+          <button type="button" class="ok-btn" data-grant="${esc(entry.id)}">Выдать доступ</button>
+          <button type="button" class="${entry.blockedAt ? 'ok-btn' : 'danger-btn'}" data-block="${esc(entry.id)}" data-blocked="${entry.blockedAt ? '1' : '0'}">
+            ${entry.blockedAt ? 'Разблокировать' : 'Заблокировать'}
+          </button>
+        </div>
       </article>`;
     }).join('');
 
     return `<section class="admin-card tab-panel">
-      <h2>Пользователи</h2>
-      <p class="muted">Статус подписки и последней оплаты</p>
-      <div class="user-card-list">${cards || '<p class="muted">Пока нет пользователей</p>'}</div>
+      <h2>Участники</h2>
+      <p class="muted">Поиск, ручная выдача тарифа и блок. Пишет сразу в Timeweb.</p>
+      <div class="toolbar">
+        <input id="user-query" value="${esc(state.userQuery)}" placeholder="Имя, почта или телефон" />
+        <select id="user-filter">
+          <option value="all" ${state.userFilter === 'all' ? 'selected' : ''}>Все</option>
+          <option value="paid" ${state.userFilter === 'paid' ? 'selected' : ''}>С доступом</option>
+          <option value="none" ${state.userFilter === 'none' ? 'selected' : ''}>Без оплаты</option>
+          <option value="blocked" ${state.userFilter === 'blocked' ? 'selected' : ''}>Заблокированы</option>
+        </select>
+      </div>
+      ${state.status.user ? `<p class="status">${esc(state.status.user)}</p>` : ''}
+      <div class="user-card-list">${cards || '<p class="muted">Никого не нашли</p>'}</div>
+    </section>`;
+  }
+
+  function renderAnnounce() {
+    const lenta = state.chatRooms.find((room) => room.slug === 'posts');
+    return `<section class="admin-card tab-panel">
+      <h2>ЛЕНТА клуба</h2>
+      <p class="muted">Пишут только руководители. Объявление сразу появится в чате «ЛЕНТА» у участников${lenta ? ` · ${lenta._count?.messages || 0} сообщений` : ''}.</p>
+      <form class="admin-form announce-box" id="announce-form">
+        <label>Текст объявления
+          <textarea id="announce-body" required rows="5" placeholder="Вышел новый подкаст / собираемся в 20:00 в Zoom">${esc(state.announce.body)}</textarea>
+        </label>
+        <label class="admin-checkbox">
+          <input type="checkbox" id="announce-pin" ${state.announce.pin ? 'checked' : ''} />
+          Закрепить сверху
+        </label>
+        ${state.status.announce ? `<p class="status">${esc(state.status.announce)}</p>` : ''}
+        <button type="submit">Опубликовать в Ленту</button>
+      </form>
     </section>`;
   }
 
@@ -186,12 +296,11 @@
 
     return `
       <section class="admin-card tab-panel">
-        <h2>Новый пост</h2>
-        <p class="muted">Текст + картинка. Сразу появится в приложении.</p>
+        <h2>Пост в ленту приложения</h2>
+        <p class="muted">Это публичная лента PWA, не чат. Картинка грузится на Timeweb.</p>
         <form class="admin-form" id="post-form">
           <label>Заголовок (необязательно)<input id="post-title" value="${esc(p.title)}" /></label>
           <label>Текст поста<textarea id="post-body" required rows="6">${esc(p.body)}</textarea></label>
-
           <div class="image-attach">
             <input id="post-file" accept="image/jpeg,image/png,image/webp,image/gif" type="file" hidden />
             <button type="button" class="image-attach-btn${hasImage ? ' has-image' : ''}" id="post-pick-image" ${state.uploading ? 'disabled' : ''}>
@@ -212,19 +321,16 @@
               <button type="button" id="post-clear-image">Убрать</button>
             </div>` : ''}
           </div>
-
           <details class="url-details">
             <summary>Или вставить URL картинки</summary>
             <label class="url-label"><input id="post-image-url" placeholder="https://…" value="${esc(p.imageUrl)}" /></label>
           </details>
-
           ${state.status.post ? `<p class="status">${esc(state.status.post)}</p>` : ''}
           <button type="submit" ${state.uploading ? 'disabled' : ''}>${state.uploading ? 'Подождите…' : 'Опубликовать'}</button>
         </form>
       </section>
       <section class="admin-card tab-panel">
         <h2>Все посты</h2>
-        <p class="muted">Редактирование, удаление постов и комментариев</p>
         <div class="feed-admin-list">${list || '<p class="muted">Постов пока нет</p>'}</div>
       </section>`;
   }
@@ -285,7 +391,7 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Платежи</h2>
-      <p class="muted">Когда подключим кассу — статусы обновятся сами</p>
+      <p class="muted">Живые статусы с Timeweb. Когда ЮKassa в бою — сюда падают webhook'и сами.</p>
       <div class="pay-card-list">${cards || '<p class="muted">Платежей пока нет</p>'}</div>
     </section>`;
   }
@@ -326,7 +432,7 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Чаты клуба</h2>
-      <p class="muted">Откройте чат, чтобы модерировать сообщения</p>
+      <p class="muted">Модерация сообщений на живом сервере</p>
       ${state.status.chat ? `<p class="status">${esc(state.status.chat)}</p>` : ''}
       <div class="chat-room-list">${rooms || '<p class="muted">Чатов пока нет</p>'}</div>
     </section>`;
@@ -373,7 +479,6 @@
           <p class="muted">${room._count?.messages ?? messages.length} сообщений</p>
         </div>
       </div>
-
       <div class="chat-room-controls">
         <label class="chat-switch">
           <input type="checkbox" id="room-can-post" ${room.canPost ? 'checked' : ''} />
@@ -385,21 +490,52 @@
         </label>
       </div>
       ${state.status.chat ? `<p class="status">${esc(state.status.chat)}</p>` : ''}
-
       <div class="chat-thread">${bubbles}</div>
     </section>`;
   }
 
-  function renderChats() {
-    const room = selectedRoom();
-    if (room) return renderChatThread(room);
-    return renderChatRoomList();
+  function renderMovies() {
+    const selected = state.movies.find((item) => item.id === state.selectedMovieId);
+    if (selected) {
+      return `<section class="admin-card tab-panel">
+        <div class="chat-thread-top">
+          <button type="button" class="chat-back-btn" id="movie-back">← Назад</button>
+          <div><h2>${esc(selected.title)}</h2><p class="muted">Киноклуб в медиатеке</p></div>
+        </div>
+        <form class="admin-form" id="movie-edit-form">
+          <label>Название<input id="movie-title" value="${esc(selected.title)}" /></label>
+          <label>Год<input id="movie-year" value="${esc(selected.year || '')}" /></label>
+          <label>Тема<input id="movie-theme" value="${esc(selected.theme || '')}" /></label>
+          <label>Рекомендация / описание<textarea id="movie-description" rows="6">${esc(selected.description || '')}</textarea></label>
+          <label>Вопрос для рефлексии<textarea id="movie-prompt" rows="4">${esc(selected.prompt || '')}</textarea></label>
+          ${state.status.movie ? `<p class="status">${esc(state.status.movie)}</p>` : ''}
+          <button type="submit">Сохранить в медиатеке</button>
+        </form>
+      </section>`;
+    }
+
+    const cards = state.movies.map((movie) => `
+      <article class="movie-admin-card">
+        <h3>${esc(movie.title)}</h3>
+        <p class="muted">${esc(movie.year || '')} · ${esc(movie.theme || 'Киноклуб')}</p>
+        <button type="button" data-open-movie="${esc(movie.id)}">Редактировать</button>
+      </article>`).join('');
+
+    return `<section class="admin-card tab-panel">
+      <h2>Киноклуб</h2>
+      <p class="muted">Рекомендации и вопросы для рефлексии. Разборы фильмов закрыты тарифом «Медиатека. Теория».</p>
+      ${state.status.movie ? `<p class="status">${esc(state.status.movie)}</p>` : ''}
+      <div class="feed-admin-list">${cards || '<p class="muted">Фильмы подтянутся после деплоя backend</p>'}</div>
+    </section>`;
   }
 
   function renderTabContent() {
+    if (state.tab === 'overview') return renderOverview();
+    if (state.tab === 'announce') return renderAnnounce();
     if (state.tab === 'users') return renderUsers();
     if (state.tab === 'payments') return renderPayments();
-    if (state.tab === 'chats') return renderChats();
+    if (state.tab === 'chats') return selectedRoom() ? renderChatThread(selectedRoom()) : renderChatRoomList();
+    if (state.tab === 'movies') return renderMovies();
     const post = selectedFeedPost();
     if (post) return renderPostEditor(post);
     return renderPostForm();
@@ -415,7 +551,11 @@
             <p class="muted">${esc(state.user?.name || '')} · ${esc(state.user?.role || '')}</p>
           </div>
         </div>
-        <button type="button" id="logout-btn">Выйти</button>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          ${liveChip()}
+          <button type="button" class="ghost-btn" id="movies-btn">Кино</button>
+          <button type="button" id="logout-btn">Выйти</button>
+        </div>
       </header>
       ${renderTabs()}
       ${renderStats()}
@@ -431,11 +571,18 @@
       render();
     };
 
+    document.getElementById('movies-btn')?.addEventListener('click', () => {
+      state.tab = 'movies';
+      state.selectedMovieId = '';
+      render();
+    });
+
     app.querySelectorAll('[data-tab]').forEach((btn) => {
       btn.onclick = () => {
         const next = btn.dataset.tab;
         if (next !== 'chats') state.selectedRoomId = '';
         if (next !== 'posts') state.selectedPostId = '';
+        if (next !== 'movies') state.selectedMovieId = '';
         state.tab = next;
         render();
         window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -444,11 +591,119 @@
 
     if (state.tab === 'posts') bindPosts();
     if (state.tab === 'chats') bindChats();
+    if (state.tab === 'users') bindUsers();
+    if (state.tab === 'announce') bindAnnounce();
+    if (state.tab === 'movies') bindMovies();
+  }
+
+  function bindUsers() {
+    const query = document.getElementById('user-query');
+    const filter = document.getElementById('user-filter');
+    query?.addEventListener('input', (event) => { state.userQuery = event.target.value; });
+    query?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); render(); }
+    });
+    query?.addEventListener('blur', () => render());
+    filter?.addEventListener('change', (event) => {
+      state.userFilter = event.target.value;
+      render();
+    });
+
+    app.querySelectorAll('[data-grant]').forEach((btn) => {
+      btn.onclick = async () => {
+        const select = app.querySelector(`[data-grant-plan="${btn.dataset.grant}"]`);
+        try {
+          await API.grantAccess(btn.dataset.grant, { planCode: select?.value || 'library_30' });
+          state.status.user = 'Доступ выдан на сервере';
+          await reloadUsers();
+          state.summary = await API.summary();
+          render();
+        } catch (error) {
+          state.status.user = error instanceof Error ? error.message : 'Не удалось выдать доступ — нужен деплой backend';
+          render();
+        }
+      };
+    });
+
+    app.querySelectorAll('[data-block]').forEach((btn) => {
+      btn.onclick = async () => {
+        const blocked = btn.dataset.blocked !== '1';
+        if (blocked && !window.confirm('Заблокировать участника?')) return;
+        try {
+          await API.updateUser(btn.dataset.block, { blocked });
+          state.status.user = blocked ? 'Участник заблокирован' : 'Блок снят';
+          await reloadUsers();
+          render();
+        } catch (error) {
+          state.status.user = error instanceof Error ? error.message : 'Не удалось обновить';
+          render();
+        }
+      };
+    });
+  }
+
+  function bindAnnounce() {
+    document.getElementById('announce-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      state.announce.body = document.getElementById('announce-body').value;
+      state.announce.pin = document.getElementById('announce-pin').checked;
+      try {
+        await API.announce({
+          body: state.announce.body.trim(),
+          roomSlug: 'posts',
+          pin: state.announce.pin,
+        });
+        state.announce.body = '';
+        state.status.announce = 'Опубликовано в Ленте клуба';
+        await reloadChats();
+        render();
+      } catch (error) {
+        state.status.announce = error instanceof Error ? error.message : 'Нужен деплой backend на Timeweb';
+        render();
+      }
+    });
+  }
+
+  function bindMovies() {
+    document.getElementById('movie-back')?.addEventListener('click', () => {
+      state.selectedMovieId = '';
+      render();
+    });
+    app.querySelectorAll('[data-open-movie]').forEach((btn) => {
+      btn.onclick = () => {
+        state.selectedMovieId = btn.dataset.openMovie;
+        render();
+      };
+    });
+    document.getElementById('movie-edit-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      try {
+        await API.updateMovie(state.selectedMovieId, {
+          title: document.getElementById('movie-title').value.trim(),
+          year: document.getElementById('movie-year').value.trim(),
+          theme: document.getElementById('movie-theme').value.trim(),
+          description: document.getElementById('movie-description').value.trim(),
+          prompt: document.getElementById('movie-prompt').value.trim(),
+        });
+        state.status.movie = 'Фильм сохранён';
+        const payload = await API.movies();
+        state.movies = payload.movies || [];
+        render();
+      } catch (error) {
+        state.status.movie = error instanceof Error ? error.message : 'Не удалось сохранить';
+        render();
+      }
+    });
   }
 
   async function reloadFeedPosts() {
     const payload = await API.feedPosts();
     state.feedPosts = payload.posts || [];
+  }
+
+  async function reloadUsers() {
+    const payload = await API.users();
+    state.users = payload.users || [];
   }
 
   function bindPosts() {
@@ -699,18 +954,21 @@
   }
 
   async function loadDashboard() {
-    const [summary, users, payments, chats, feed] = await Promise.all([
+    const [summary, users, payments, chats, feed, movies] = await Promise.all([
       API.summary(),
       API.users(),
       API.payments().catch(() => ({ payments: [] })),
       API.chatRooms(),
       API.feedPosts().catch(() => ({ posts: [] })),
+      API.movies().catch(() => ({ movies: [] })),
     ]);
     state.summary = summary;
     state.users = users.users || [];
     state.payments = payments.payments || [];
     state.chatRooms = chats.rooms || [];
     state.feedPosts = feed.posts || [];
+    state.movies = movies.movies || [];
+    state.live.ok = true;
   }
 
   function render() {
@@ -722,6 +980,7 @@
   }
 
   async function init() {
+    await pingLive();
     try {
       if (!API.getToken()) {
         renderLogin();
