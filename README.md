@@ -6,6 +6,8 @@
 
 GitHub Pages: `https://rickytickytavylm.github.io/loza-admin/`
 
+В репозитории один раз: **Settings → Pages → Deploy from a branch → `main` / `/ (root)` → Save**.
+
 Локально: откройте `index.html` в браузере.
 
 Вход: аккаунт с ролью OWNER / ADMIN / CURATOR.
