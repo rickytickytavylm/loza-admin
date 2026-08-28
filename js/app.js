@@ -157,8 +157,8 @@
           <span>${esc(API.API_URL)}<br />${ops.time ? `сверка ${fmtDateTime(ops.time)}` : 'ждём ответ summary'}</span>
         </article>
         <article class="ops-card">
-          <strong>${ops.yookassaReady ? 'ЮKassa готова' : 'Оплата: ' + (ops.paymentProvider || 'mock')}</strong>
-          <span>${ops.yookassaReady ? 'Боевые платежи включены' : 'Касса ещё в тестовом режиме'}</span>
+          <strong>${ops.prodamusReady ? 'Продамус готов' : ops.yookassaReady ? 'ЮKassa готова' : 'Оплата: ' + (ops.paymentProvider || 'mock')}</strong>
+          <span>${ops.prodamusReady || ops.yookassaReady ? 'Боевые платежи включены' : 'Касса ещё не подключена'}</span>
         </article>
         <article class="ops-card">
           <strong>AI ${ai.deepseek || ai.gemini ? 'подключён' : 'не настроен'}</strong>
@@ -391,7 +391,7 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Платежи</h2>
-      <p class="muted">Живые статусы с Timeweb. Когда ЮKassa в бою — сюда падают webhook'и сами.</p>
+      <p class="muted">Живые статусы с Timeweb. Когда Продамус в бою — уведомления об оплате приходят сами.</p>
       <div class="pay-card-list">${cards || '<p class="muted">Платежей пока нет</p>'}</div>
     </section>`;
   }
