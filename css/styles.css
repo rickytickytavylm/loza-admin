@@ -336,6 +336,15 @@ button:active { transform: translateY(0) scale(0.985); }
   text-align: center;
 }
 
+.install-hint {
+  max-width: 260px;
+  margin: 10px auto 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: center;
+}
+
 .admin-topbar strong {
   display: block;
   font-family: "Unbounded", "Manrope", sans-serif;

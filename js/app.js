@@ -67,6 +67,20 @@
     return { text: 'Нет оплаты', cls: 'is-none' };
   }
 
+  function isStandalone() {
+    return window.matchMedia('(display-mode: standalone)').matches
+      || window.navigator.standalone === true;
+  }
+
+  function standaloneHint() {
+    if (isStandalone()) return '';
+    const ios = /iPhone|iPad|iPod/i.test(navigator.userAgent || '');
+    const text = ios
+      ? 'Чтобы поставить на телефон: Поделиться → На экран «Домой»'
+      : 'Можно установить как приложение — в меню браузера «Установить»';
+    return `<p class="install-hint">${text}</p>`;
+  }
+
   function liveChip() {
     if (state.live.ok === true) return '<span class="live-chip"><i></i>Timeweb онлайн</span>';
     if (state.live.ok === false) return '<span class="live-chip is-down"><i></i>Сервер недоступен</span>';
@@ -85,9 +99,10 @@
   function renderLogin() {
     app.innerHTML = `<div class="admin-login">
       <form class="admin-card" id="login-form">
-        <img class="login-logo" src="assets/logo.png" alt="Лоза" />
-        <h1>Лоза Admin</h1>
-        <p class="muted">Панель команды · напрямую к api.loza-club.ru</p>
+        <img class="login-logo" src="assets/logo.png" alt="Loza Admin" />
+        <h1>Loza Admin</h1>
+        <p class="muted">Панель команды</p>
+        ${standaloneHint()}
         <div style="text-align:center;margin:8px 0 4px">${liveChip()}</div>
         <div class="admin-form">
           <label>Email<input id="login-email" placeholder="email команды" autocomplete="username" /></label>
@@ -568,9 +583,9 @@
     app.innerHTML = `<div class="admin-shell">
       <header class="admin-topbar">
         <div>
-          <img class="admin-topbar-logo" src="assets/logo.png" alt="Лоза" />
+          <img class="admin-topbar-logo" src="assets/logo.png" alt="Loza Admin" />
           <div>
-            <strong>Лоза Admin</strong>
+            <strong>Loza Admin</strong>
             <p class="muted">${esc(state.user?.name || '')} · ${esc(state.user?.role || '')}</p>
           </div>
         </div>
@@ -1042,4 +1057,8 @@
   }
 
   document.addEventListener('DOMContentLoaded', init);
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch(() => {});
+  }
 })();
