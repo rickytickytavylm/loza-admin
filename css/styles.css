@@ -1129,6 +1129,15 @@ button.danger {
   margin-top: 12px;
 }
 
+.user-actions select {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  font-size: 12px;
+}
+
 .user-actions button,
 .ghost-btn {
   padding: 8px 12px;

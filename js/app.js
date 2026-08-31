@@ -42,6 +42,22 @@
     return new Date(value).toLocaleString('ru-RU');
   }
 
+  function roleLabel(role) {
+    if (role === 'OWNER') return 'Владелец';
+    if (role === 'ADMIN') return 'Админ';
+    if (role === 'CURATOR') return 'Куратор';
+    if (role === 'GUEST') return 'Гость';
+    return 'Участник';
+  }
+
+  function roleChoices(entry) {
+    const me = state.user;
+    if (!me || entry.id === me.id || entry.role === 'OWNER') return [];
+    if (me.role === 'OWNER') return ['MEMBER', 'CURATOR', 'ADMIN'];
+    if (me.role === 'ADMIN' && entry.role !== 'ADMIN') return ['MEMBER', 'CURATOR'];
+    return [];
+  }
+
   function payLabel(status) {
     if (status === 'active') return { text: 'Оплачено', cls: 'is-active' };
     if (status === 'expired') return { text: 'Истекла', cls: 'is-expired' };
@@ -188,6 +204,7 @@
       if (state.userFilter === 'paid' && entry.payStatus !== 'active') return false;
       if (state.userFilter === 'none' && entry.payStatus === 'active') return false;
       if (state.userFilter === 'blocked' && !entry.blockedAt) return false;
+      if (state.userFilter === 'team' && !['OWNER', 'ADMIN', 'CURATOR'].includes(entry.role)) return false;
       if (!q) return true;
       return `${entry.name} ${entry.email} ${entry.phone || ''}`.toLowerCase().includes(q);
     });
@@ -214,7 +231,7 @@
           <span class="pay-pill ${pay.cls}">${pay.text}</span>
         </div>
         <div class="user-card-foot">
-          <span>${esc(entry.role)}</span>
+          <span>${esc(roleLabel(entry.role))}</span>
           <span>${esc(payDetail)}</span>
           <span>${fmtDate(entry.createdAt)}</span>
         </div>
@@ -226,6 +243,11 @@
             <option value="club_plus_30">Клуб Плюс</option>
           </select>
           <button type="button" class="ok-btn" data-grant="${esc(entry.id)}">Выдать доступ</button>
+          ${roleChoices(entry).length ? `
+          <select data-role-select="${esc(entry.id)}">
+            ${roleChoices(entry).map((role) => `<option value="${role}" ${entry.role === role ? 'selected' : ''}>${esc(roleLabel(role))}</option>`).join('')}
+          </select>
+          <button type="button" class="ok-btn" data-role="${esc(entry.id)}">Назначить роль</button>` : ''}
           <button type="button" class="${entry.blockedAt ? 'ok-btn' : 'danger-btn'}" data-block="${esc(entry.id)}" data-blocked="${entry.blockedAt ? '1' : '0'}">
             ${entry.blockedAt ? 'Разблокировать' : 'Заблокировать'}
           </button>
@@ -235,7 +257,7 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Участники</h2>
-      <p class="muted">Поиск, ручная выдача тарифа и блок. Пишет сразу в Timeweb.</p>
+      <p class="muted">Поиск, тариф, роль и блок. Админ и куратор могут писать в Ленту клуба.</p>
       <div class="toolbar">
         <input id="user-query" value="${esc(state.userQuery)}" placeholder="Имя, почта или телефон" />
         <select id="user-filter">
@@ -243,6 +265,7 @@
           <option value="paid" ${state.userFilter === 'paid' ? 'selected' : ''}>С доступом</option>
           <option value="none" ${state.userFilter === 'none' ? 'selected' : ''}>Без оплаты</option>
           <option value="blocked" ${state.userFilter === 'blocked' ? 'selected' : ''}>Заблокированы</option>
+          <option value="team" ${state.userFilter === 'team' ? 'selected' : ''}>Команда</option>
         </select>
       </div>
       ${state.status.user ? `<p class="status">${esc(state.status.user)}</p>` : ''}
@@ -254,7 +277,7 @@
     const lenta = state.chatRooms.find((room) => room.slug === 'posts');
     return `<section class="admin-card tab-panel">
       <h2>ЛЕНТА клуба</h2>
-      <p class="muted">Пишут только руководители. Объявление сразу появится в чате «ЛЕНТА» у участников${lenta ? ` · ${lenta._count?.messages || 0} сообщений` : ''}.</p>
+      <p class="muted">Пишут только админы и кураторы. Участники читают, гости этот чат не видят${lenta ? ` · ${lenta._count?.messages || 0} сообщений` : ''}.</p>
       <form class="admin-form announce-box" id="announce-form">
         <label>Текст объявления
           <textarea id="announce-body" required rows="5" placeholder="Вышел новый подкаст / собираемся в 20:00 в Zoom">${esc(state.announce.body)}</textarea>
@@ -620,6 +643,23 @@
           render();
         } catch (error) {
           state.status.user = error instanceof Error ? error.message : 'Не удалось выдать доступ — нужен деплой backend';
+          render();
+        }
+      };
+    });
+
+    app.querySelectorAll('[data-role]').forEach((btn) => {
+      btn.onclick = async () => {
+        const select = app.querySelector(`[data-role-select="${btn.dataset.role}"]`);
+        const role = select?.value;
+        if (!role) return;
+        try {
+          await API.updateUser(btn.dataset.role, { role });
+          state.status.user = `Роль обновлена: ${roleLabel(role)}`;
+          await reloadUsers();
+          render();
+        } catch (error) {
+          state.status.user = error instanceof Error ? error.message : 'Не удалось сменить роль — нужен деплой backend';
           render();
         }
       };
