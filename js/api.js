@@ -104,5 +104,10 @@
     movies: () => request('/admin/movies'),
     updateMovie: (movieId, data) =>
       request(`/admin/movies/${movieId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    content: () => request('/admin/content'),
+    createContent: (data) =>
+      request('/admin/content', { method: 'POST', body: JSON.stringify(data) }),
+    deleteContent: (entryId) =>
+      request(`/admin/content/${entryId}`, { method: 'DELETE' }),
   };
 })();

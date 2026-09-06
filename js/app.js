@@ -17,11 +17,15 @@
     selectedRoomId: '',
     userQuery: '',
     userFilter: 'all',
+    paymentQuery: '',
+    library: [],
+    librarySections: [],
+    contentForm: { sectionSlug: 'podcasts', title: '', summary: '', mediaUrl: '', type: 'VIDEO' },
     announce: { body: '', pin: true },
     post: { title: '', body: '', imageUrl: '', preview: '', fileName: '' },
     uploading: false,
     live: { ok: null, checkedAt: '' },
-    status: { post: '', chat: '', user: '', movie: '', announce: '', error: '' },
+    status: { post: '', chat: '', user: '', movie: '', announce: '', content: '', error: '' },
   };
 
   function esc(value) {
@@ -139,8 +143,9 @@
   function renderTabs() {
     const tabs = [
       { id: 'overview', label: 'Обзор' },
-      { id: 'announce', label: 'Лента' },
+      { id: 'announce', label: 'Анонсы' },
       { id: 'posts', label: 'Посты' },
+      { id: 'content', label: 'Медиатека' },
       { id: 'users', label: 'Люди' },
       { id: 'payments', label: 'Оплаты' },
       { id: 'chats', label: 'Чаты' },
@@ -229,9 +234,11 @@
     const cards = filteredUsers().map((entry) => {
       const avatar = entry.avatarUrl || '';
       const pay = payLabel(entry.payStatus);
-      const sub = entry.subscription;
-      const payDetail = sub?.accessUntil
-        ? `${sub.planName || 'Подписка'} · до ${fmtDate(sub.accessUntil)}`
+      const now = Date.now();
+      const activeSubs = (entry.subscriptions || (entry.subscription ? [entry.subscription] : []))
+        .filter((item) => item.active && item.accessUntil && new Date(item.accessUntil).getTime() > now);
+      const payDetail = activeSubs.length
+        ? activeSubs.map((item) => `${item.planName || 'Подписка'} · до ${fmtDate(item.accessUntil)}`).join(' · ')
         : (entry.lastPayment
           ? `${entry.lastPayment.planName || entry.lastPayment.provider} · ${entry.lastPayment.amountRub || '—'} ₽`
           : 'Без оплаты');
@@ -272,7 +279,7 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Участники</h2>
-      <p class="muted">Поиск, тариф, роль и блок. Админ и куратор могут писать в Ленту клуба.</p>
+      <p class="muted">Если куплено несколько продуктов, все действующие видны в одной строке.</p>
       <div class="toolbar">
         <input id="user-query" value="${esc(state.userQuery)}" placeholder="Имя, почта или телефон" />
         <select id="user-filter">
@@ -291,7 +298,7 @@
   function renderAnnounce() {
     const lenta = state.chatRooms.find((room) => room.slug === 'posts');
     return `<section class="admin-card tab-panel">
-      <h2>ЛЕНТА клуба</h2>
+      <h2>Анонсы закрытого клуба</h2>
       <p class="muted">Пишут только админы и кураторы. Участники читают, гости этот чат не видят${lenta ? ` · ${lenta._count?.messages || 0} сообщений` : ''}.</p>
       <form class="admin-form announce-box" id="announce-form">
         <label>Текст объявления
@@ -302,7 +309,7 @@
           Закрепить сверху
         </label>
         ${state.status.announce ? `<p class="status">${esc(state.status.announce)}</p>` : ''}
-        <button type="submit">Опубликовать в Ленту</button>
+        <button type="submit">Опубликовать анонс</button>
       </form>
     </section>`;
   }
@@ -410,15 +417,35 @@
     </section>`;
   }
 
+  function paymentEmail(payment) {
+    return payment.user?.email || payment.email || '';
+  }
+
+  function paymentPhone(payment) {
+    return payment.user?.phone || payment.phone || '';
+  }
+
+  function filteredPayments() {
+    const q = state.paymentQuery.trim().toLowerCase();
+    return state.payments.filter((payment) => {
+      if (!q) return true;
+      return `${payment.user?.name || ''} ${paymentEmail(payment)} ${paymentPhone(payment)} ${payment.planName || ''}`.toLowerCase().includes(q);
+    });
+  }
+
   function renderPayments() {
-    const cards = state.payments.map((payment) => {
+    const cards = filteredPayments().map((payment) => {
       const pill = payment.status === 'PAID' ? 'is-active' : payment.status === 'PENDING' ? 'is-pending' : payment.status === 'FAILED' ? 'is-failed' : 'is-none';
+      const email = paymentEmail(payment);
+      const phone = paymentPhone(payment);
       return `<article class="pay-card">
         <div class="pay-card-top">
-          <strong>${esc(payment.user?.name || payment.email || '—')}</strong>
+          <strong>${esc(payment.user?.name || email || '—')}</strong>
           <span class="pay-pill ${pill}">${esc(payment.status)}</span>
         </div>
         <div class="pay-card-meta">
+          <span>${esc(email || 'Нет почты')}</span>
+          <span>${esc(phone || 'Нет телефона')}</span>
           <span>${esc(payment.provider || '—')}</span>
           <span>${esc(payment.planName || '—')}${payment.planDays ? ` · ${payment.planDays} дн.` : ''}</span>
           <span>${payment.amountRub != null ? `${payment.amountRub} ₽` : '—'}</span>
@@ -429,8 +456,11 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Платежи</h2>
-      <p class="muted">Живые статусы с Timeweb. Когда Продамус в бою — уведомления об оплате приходят сами.</p>
-      <div class="pay-card-list">${cards || '<p class="muted">Платежей пока нет</p>'}</div>
+      <p class="muted">Поиск по имени, почте и телефону — в том числе с Продамуса.</p>
+      <div class="toolbar">
+        <input id="pay-query" value="${esc(state.paymentQuery)}" placeholder="Имя, почта или телефон" />
+      </div>
+      <div class="pay-card-list">${cards || '<p class="muted">Платежей нет</p>'}</div>
     </section>`;
   }
 
@@ -567,9 +597,66 @@
     </section>`;
   }
 
+  function renderContent() {
+    const f = state.contentForm;
+    const sections = state.librarySections.length
+      ? state.librarySections
+      : [
+        { slug: 'podcasts', title: 'Подкасты' },
+        { slug: 'webinars', title: 'Эфиры и вебинары' },
+        { slug: 'questions', title: 'Вопросы и ответы' },
+        { slug: 'home_reviews', title: 'Разбор домашнего' },
+        { slug: 'club_reviews', title: 'Разборы участниц клуба' },
+        { slug: 'movies', title: 'Киноклуб' },
+      ];
+    const list = state.library.map((entry) => `
+      <article class="feed-admin-card">
+        <div class="feed-admin-top">
+          <div>
+            <strong>${esc(entry.title)}</strong>
+            <span class="muted">${esc(entry.section?.title || '')} · ${esc(entry.type || '')}${entry.mediaUrl ? ` · ${/kinescope/i.test(entry.mediaUrl) ? 'Кинескоп' : 'ссылка'}` : ''}</span>
+          </div>
+          <div class="feed-admin-actions">
+            <button type="button" class="danger-btn" data-del-content="${esc(entry.id)}">Удалить</button>
+          </div>
+        </div>
+        ${entry.mediaUrl ? `<p class="muted">${esc(entry.mediaUrl)}</p>` : ''}
+      </article>`).join('');
+
+    return `<section class="admin-card tab-panel">
+      <h2>Добавить в медиатеку</h2>
+      <p class="muted">Видео сначала загрузите в Кинескоп, сюда вставьте ссылку. Карточка сразу появится в клубе.</p>
+      <form class="admin-form" id="content-form">
+        <label>Раздел
+          <select id="content-section">
+            ${sections.map((section) => `<option value="${esc(section.slug)}" ${f.sectionSlug === section.slug ? 'selected' : ''}>${esc(section.title)}</option>`).join('')}
+          </select>
+        </label>
+        <label>Тип
+          <select id="content-type">
+            <option value="VIDEO" ${f.type === 'VIDEO' ? 'selected' : ''}>Видео</option>
+            <option value="AUDIO" ${f.type === 'AUDIO' ? 'selected' : ''}>Аудио</option>
+            <option value="TEXT" ${f.type === 'TEXT' ? 'selected' : ''}>Текст</option>
+            <option value="LIVE" ${f.type === 'LIVE' ? 'selected' : ''}>Эфир</option>
+          </select>
+        </label>
+        <label>Название<input id="content-title" required value="${esc(f.title)}" placeholder="Как в карточке увидят участники" /></label>
+        <label>Короткое описание<textarea id="content-summary" rows="3" placeholder="О чём материал">${esc(f.summary)}</textarea></label>
+        <label>Ссылка на видео или аудио<input id="content-media" value="${esc(f.mediaUrl)}" placeholder="https://kinescope.io/..." /></label>
+        ${state.status.content ? `<p class="status">${esc(state.status.content)}</p>` : ''}
+        <button type="submit">Опубликовать в клуб</button>
+      </form>
+    </section>
+    <section class="admin-card tab-panel">
+      <h2>Последние материалы</h2>
+      <div class="feed-admin-list">${list || '<p class="muted">Пока ничего не добавляли</p>'}</div>
+    </section>`;
+  }
+
   function renderTabContent() {
     if (state.tab === 'overview') return renderOverview();
     if (state.tab === 'announce') return renderAnnounce();
+    if (state.tab === 'content') return renderContent();
     if (state.tab === 'users') return renderUsers();
     if (state.tab === 'payments') return renderPayments();
     if (state.tab === 'chats') return selectedRoom() ? renderChatThread(selectedRoom()) : renderChatRoomList();
@@ -630,8 +717,58 @@
     if (state.tab === 'posts') bindPosts();
     if (state.tab === 'chats') bindChats();
     if (state.tab === 'users') bindUsers();
+    if (state.tab === 'payments') bindPayments();
+    if (state.tab === 'content') bindContent();
     if (state.tab === 'announce') bindAnnounce();
     if (state.tab === 'movies') bindMovies();
+  }
+
+  function bindPayments() {
+    const query = document.getElementById('pay-query');
+    query?.addEventListener('input', (event) => { state.paymentQuery = event.target.value; });
+    query?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); render(); }
+    });
+    query?.addEventListener('blur', () => render());
+  }
+
+  function bindContent() {
+    document.getElementById('content-form')?.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      state.contentForm = {
+        sectionSlug: document.getElementById('content-section').value,
+        type: document.getElementById('content-type').value,
+        title: document.getElementById('content-title').value,
+        summary: document.getElementById('content-summary').value,
+        mediaUrl: document.getElementById('content-media').value.trim(),
+      };
+      try {
+        await API.createContent(state.contentForm);
+        state.contentForm = { ...state.contentForm, title: '', summary: '', mediaUrl: '' };
+        state.status.content = 'Материал появился в клубе';
+        const data = await API.content();
+        state.library = data.entries || [];
+        state.librarySections = data.sections || [];
+        render();
+      } catch (error) {
+        state.status.content = error instanceof Error ? error.message : 'Не удалось сохранить — нужен деплой backend';
+        render();
+      }
+    });
+    app.querySelectorAll('[data-del-content]').forEach((btn) => {
+      btn.onclick = async () => {
+        if (!window.confirm('Удалить материал из клуба?')) return;
+        try {
+          await API.deleteContent(btn.dataset.delContent);
+          state.library = state.library.filter((item) => item.id !== btn.dataset.delContent);
+          state.status.content = 'Удалено';
+          render();
+        } catch (error) {
+          state.status.content = error instanceof Error ? error.message : 'Не удалось удалить';
+          render();
+        }
+      };
+    });
   }
 
   function bindUsers() {
@@ -1009,13 +1146,14 @@
   }
 
   async function loadDashboard() {
-    const [summary, users, payments, chats, feed, movies] = await Promise.all([
+    const [summary, users, payments, chats, feed, movies, content] = await Promise.all([
       API.summary(),
       API.users(),
       API.payments().catch(() => ({ payments: [] })),
       API.chatRooms(),
       API.feedPosts().catch(() => ({ posts: [] })),
       API.movies().catch(() => ({ movies: [] })),
+      API.content().catch(() => ({ sections: [], entries: [] })),
     ]);
     state.summary = summary;
     state.users = users.users || [];
@@ -1023,6 +1161,8 @@
     state.chatRooms = chats.rooms || [];
     state.feedPosts = feed.posts || [];
     state.movies = movies.movies || [];
+    state.librarySections = content.sections || [];
+    state.library = content.entries || [];
     state.live.ok = true;
   }
 
