@@ -20,7 +20,7 @@
     paymentQuery: '',
     library: [],
     librarySections: [],
-    contentForm: { sectionSlug: 'podcasts', title: '', summary: '', mediaUrl: '', type: 'VIDEO' },
+    contentForm: { sectionSlug: 'podcasts', title: '', summary: '', mediaUrl: '', type: 'VIDEO', coverUrl: '' },
     announce: { body: '', pin: true },
     post: { title: '', body: '', imageUrl: '', preview: '', fileName: '' },
     stockImages: [
@@ -83,9 +83,9 @@
     if (url && url.value.trim()) state.post.imageUrl = url.value.trim();
   }
 
-  function stockImagePicker(selectedUrl) {
+  function stockImagePicker(selectedUrl, caption = 'Или выбрать готовую картинку') {
     return `<div class="stock-image-block">
-      <p class="muted">Или выбрать готовую картинку</p>
+      <p class="muted">${esc(caption)}</p>
       <div class="stock-image-grid">
         ${state.stockImages.map((url) => `
           <button type="button" class="stock-image-btn${selectedUrl === url ? ' is-active' : ''}" data-stock-image="${esc(url)}" aria-label="Выбрать картинку">
@@ -661,6 +661,7 @@
             <button type="button" class="danger-btn" data-del-content="${esc(entry.id)}">Удалить</button>
           </div>
         </div>
+        ${entry.coverUrl ? `<img class="feed-admin-thumb" src="${esc(entry.coverUrl)}" alt="" />` : ''}
         ${entry.mediaUrl ? `<p class="muted">${esc(entry.mediaUrl)}</p>` : ''}
       </article>`).join('');
 
@@ -686,6 +687,9 @@
         <label>Название<input id="content-title" required value="${esc(f.title)}" placeholder="Как в карточке увидят участники" /></label>
         <label>Короткое описание<textarea id="content-summary" rows="3" placeholder="О чём материал">${esc(f.summary)}</textarea></label>
         <label>Ссылка на видео или аудио<input id="content-media" value="${esc(f.mediaUrl)}" placeholder="https://kinescope.io/..." /></label>
+        <div class="image-attach">
+          ${stockImagePicker(f.coverUrl, 'Картинка карточки в клубе')}
+        </div>
         ${state.status.content ? `<p class="status">${esc(state.status.content)}</p>` : ''}
         <button type="submit">Опубликовать в клуб</button>
       </form>
@@ -775,28 +779,42 @@
     query?.addEventListener('blur', () => render());
   }
 
+  function snapshotContentForm() {
+    const section = document.getElementById('content-section');
+    const type = document.getElementById('content-type');
+    const title = document.getElementById('content-title');
+    const summary = document.getElementById('content-summary');
+    const media = document.getElementById('content-media');
+    if (section) state.contentForm.sectionSlug = section.value;
+    if (type) state.contentForm.type = type.value;
+    if (title) state.contentForm.title = title.value;
+    if (summary) state.contentForm.summary = summary.value;
+    if (media) state.contentForm.mediaUrl = media.value.trim();
+  }
+
   function bindContent() {
     document.getElementById('content-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
-      state.contentForm = {
-        sectionSlug: document.getElementById('content-section').value,
-        type: document.getElementById('content-type').value,
-        title: document.getElementById('content-title').value,
-        summary: document.getElementById('content-summary').value,
-        mediaUrl: document.getElementById('content-media').value.trim(),
-      };
+      snapshotContentForm();
       try {
         await API.createContent(state.contentForm);
-        state.contentForm = { ...state.contentForm, title: '', summary: '', mediaUrl: '' };
+        state.contentForm = { ...state.contentForm, title: '', summary: '', mediaUrl: '', coverUrl: '' };
         state.status.content = 'Материал появился в клубе';
         const data = await API.content();
         state.library = data.entries || [];
         state.librarySections = data.sections || [];
         render();
       } catch (error) {
-        state.status.content = error instanceof Error ? error.message : 'Не удалось сохранить — нужен деплой backend';
+        state.status.content = error instanceof Error ? error.message : 'Не удалось сохранить';
         render();
       }
+    });
+    app.querySelectorAll('[data-stock-image]').forEach((btn) => {
+      btn.onclick = () => {
+        snapshotContentForm();
+        state.contentForm.coverUrl = btn.dataset.stockImage;
+        render();
+      };
     });
     app.querySelectorAll('[data-del-content]').forEach((btn) => {
       btn.onclick = async () => {
