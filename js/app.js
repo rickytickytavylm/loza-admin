@@ -23,6 +23,18 @@
     contentForm: { sectionSlug: 'podcasts', title: '', summary: '', mediaUrl: '', type: 'VIDEO' },
     announce: { body: '', pin: true },
     post: { title: '', body: '', imageUrl: '', preview: '', fileName: '' },
+    stockImages: [
+      'https://lozapsy.help/assets/webp/background01.webp',
+      'https://lozapsy.help/assets/webp/background02.webp',
+      'https://lozapsy.help/assets/webp/background03.webp',
+      'https://lozapsy.help/assets/webp/background04.webp',
+      'https://lozapsy.help/assets/webp/background05.webp',
+      'https://lozapsy.help/assets/webp/background06.webp',
+      'https://lozapsy.help/assets/webp/background07.webp',
+      'https://lozapsy.help/assets/webp/background08.webp',
+      'https://lozapsy.help/assets/webp/background09.webp',
+      'https://lozapsy.help/assets/webp/background10.webp',
+    ],
     uploading: false,
     live: { ok: null, checkedAt: '' },
     status: { post: '', chat: '', user: '', movie: '', announce: '', content: '', error: '' },
@@ -60,6 +72,27 @@
     if (me.role === 'OWNER') return ['MEMBER', 'CURATOR', 'ADMIN'];
     if (me.role === 'ADMIN' && entry.role !== 'ADMIN') return ['MEMBER', 'CURATOR'];
     return [];
+  }
+
+  function snapshotPostForm() {
+    const title = document.getElementById('post-title');
+    const body = document.getElementById('post-body');
+    const url = document.getElementById('post-image-url');
+    if (title) state.post.title = title.value;
+    if (body) state.post.body = body.value;
+    if (url && url.value.trim()) state.post.imageUrl = url.value.trim();
+  }
+
+  function stockImagePicker(selectedUrl) {
+    return `<div class="stock-image-block">
+      <p class="muted">Или выбрать готовую картинку</p>
+      <div class="stock-image-grid">
+        ${state.stockImages.map((url) => `
+          <button type="button" class="stock-image-btn${selectedUrl === url ? ' is-active' : ''}" data-stock-image="${esc(url)}" aria-label="Выбрать картинку">
+            <img src="${esc(url)}" alt="" />
+          </button>`).join('')}
+      </div>
+    </div>`;
   }
 
   function payLabel(status) {
@@ -126,7 +159,13 @@
           document.getElementById('login-email').value.trim(),
           document.getElementById('login-password').value,
         );
-        if (!['OWNER', 'ADMIN', 'CURATOR'].includes(payload.user?.role)) {
+        if (payload.user?.role === 'CURATOR') {
+          API.clearToken();
+          error.hidden = false;
+          error.textContent = 'Админка только для админов. Анонсы публикуйте в приложении, в чате «Анонсы».';
+          return;
+        }
+        if (!['OWNER', 'ADMIN'].includes(payload.user?.role)) {
           API.clearToken();
           throw new Error('FORBIDDEN');
         }
@@ -279,7 +318,7 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Участники</h2>
-      <p class="muted">Если куплено несколько продуктов, все действующие видны в одной строке.</p>
+      <p class="muted">Доступ без оплаты: выберите продукт и нажмите «Выдать доступ». Если куплено несколько продуктов, все действующие видны в одной строке.</p>
       <div class="toolbar">
         <input id="user-query" value="${esc(state.userQuery)}" placeholder="Имя, почта или телефон" />
         <select id="user-filter">
@@ -299,7 +338,7 @@
     const lenta = state.chatRooms.find((room) => room.slug === 'posts');
     return `<section class="admin-card tab-panel">
       <h2>Анонсы закрытого клуба</h2>
-      <p class="muted">Пишут только админы и кураторы. Участники читают, гости этот чат не видят${lenta ? ` · ${lenta._count?.messages || 0} сообщений` : ''}.</p>
+      <p class="muted">Здесь пишут админы. Кураторы публикуют анонсы в приложении, в чате «Анонсы». Участники читают, гости чат не видят${lenta ? ` · ${lenta._count?.messages || 0} сообщений` : ''}.</p>
       <form class="admin-form announce-box" id="announce-form">
         <label>Текст объявления
           <textarea id="announce-body" required rows="5" placeholder="Вышел новый подкаст / собираемся в 20:00 в Zoom">${esc(state.announce.body)}</textarea>
@@ -365,6 +404,7 @@
               <img alt="Превью" src="${esc(p.preview || p.imageUrl)}" />
               <button type="button" id="post-clear-image">Убрать</button>
             </div>` : ''}
+            ${stockImagePicker(p.imageUrl)}
           </div>
           <details class="url-details">
             <summary>Или вставить URL картинки</summary>
@@ -403,6 +443,7 @@
         <label>Заголовок<input id="edit-post-title" value="${esc(post.title || '')}" /></label>
         <label>Текст<textarea id="edit-post-body" required rows="7">${esc(post.body || '')}</textarea></label>
         <label>URL картинки<input id="edit-post-image" value="${esc(post.imageUrl || '')}" placeholder="https://…" /></label>
+        ${stockImagePicker(post.imageUrl || '')}
         ${post.imageUrl ? `<div class="admin-image-preview"><img alt="" src="${esc(post.imageUrl)}" /></div>` : ''}
         ${state.status.post ? `<p class="status">${esc(state.status.post)}</p>` : ''}
         <div class="feed-admin-actions">
@@ -627,19 +668,21 @@
       <h2>Добавить в медиатеку</h2>
       <p class="muted">Видео сначала загрузите в Кинескоп, сюда вставьте ссылку. Карточка сразу появится в клубе.</p>
       <form class="admin-form" id="content-form">
-        <label>Раздел
-          <select id="content-section">
-            ${sections.map((section) => `<option value="${esc(section.slug)}" ${f.sectionSlug === section.slug ? 'selected' : ''}>${esc(section.title)}</option>`).join('')}
-          </select>
-        </label>
-        <label>Тип
-          <select id="content-type">
-            <option value="VIDEO" ${f.type === 'VIDEO' ? 'selected' : ''}>Видео</option>
-            <option value="AUDIO" ${f.type === 'AUDIO' ? 'selected' : ''}>Аудио</option>
-            <option value="TEXT" ${f.type === 'TEXT' ? 'selected' : ''}>Текст</option>
-            <option value="LIVE" ${f.type === 'LIVE' ? 'selected' : ''}>Эфир</option>
-          </select>
-        </label>
+        <div class="admin-form-row">
+          <label>Раздел
+            <select id="content-section">
+              ${sections.map((section) => `<option value="${esc(section.slug)}" ${f.sectionSlug === section.slug ? 'selected' : ''}>${esc(section.title)}</option>`).join('')}
+            </select>
+          </label>
+          <label>Тип
+            <select id="content-type">
+              <option value="VIDEO" ${f.type === 'VIDEO' ? 'selected' : ''}>Видео</option>
+              <option value="AUDIO" ${f.type === 'AUDIO' ? 'selected' : ''}>Аудио</option>
+              <option value="TEXT" ${f.type === 'TEXT' ? 'selected' : ''}>Текст</option>
+              <option value="LIVE" ${f.type === 'LIVE' ? 'selected' : ''}>Эфир</option>
+            </select>
+          </label>
+        </div>
         <label>Название<input id="content-title" required value="${esc(f.title)}" placeholder="Как в карточке увидят участники" /></label>
         <label>Короткое описание<textarea id="content-summary" rows="3" placeholder="О чём материал">${esc(f.summary)}</textarea></label>
         <label>Ссылка на видео или аудио<input id="content-media" value="${esc(f.mediaUrl)}" placeholder="https://kinescope.io/..." /></label>
@@ -835,6 +878,12 @@
   }
 
   function bindAnnounce() {
+    document.getElementById('announce-body')?.addEventListener('input', (event) => {
+      state.announce.body = event.target.value;
+    });
+    document.getElementById('announce-pin')?.addEventListener('change', (event) => {
+      state.announce.pin = event.target.checked;
+    });
     document.getElementById('announce-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       state.announce.body = document.getElementById('announce-body').value;
@@ -850,7 +899,7 @@
         await reloadChats();
         render();
       } catch (error) {
-        state.status.announce = error instanceof Error ? error.message : 'Нужен деплой backend на Timeweb';
+        state.status.announce = error instanceof Error ? error.message : 'Не удалось опубликовать анонс';
         render();
       }
     });
@@ -939,6 +988,16 @@
         }
       });
 
+      app.querySelectorAll('[data-stock-image]').forEach((btn) => {
+        btn.onclick = () => {
+          const field = document.getElementById('edit-post-image');
+          if (field) field.value = btn.dataset.stockImage;
+          app.querySelectorAll('[data-stock-image]').forEach((item) => {
+            item.classList.toggle('is-active', item === btn);
+          });
+        };
+      });
+
       app.querySelectorAll('[data-del-comment]').forEach((btn) => {
         btn.onclick = async () => {
           if (!window.confirm('Удалить комментарий?')) return;
@@ -989,6 +1048,7 @@
       fileInput.onchange = async () => {
         const file = fileInput.files?.[0];
         if (!file) return;
+        snapshotPostForm();
         state.uploading = true;
         state.post.preview = URL.createObjectURL(file);
         state.post.fileName = file.name;
@@ -1010,7 +1070,15 @@
       };
     }
 
+    document.getElementById('post-title')?.addEventListener('input', (event) => {
+      state.post.title = event.target.value;
+    });
+    document.getElementById('post-body')?.addEventListener('input', (event) => {
+      state.post.body = event.target.value;
+    });
+
     document.getElementById('post-clear-image')?.addEventListener('click', () => {
+      snapshotPostForm();
       state.post.imageUrl = '';
       state.post.preview = '';
       state.post.fileName = '';
@@ -1020,6 +1088,16 @@
     document.getElementById('post-image-url')?.addEventListener('input', (event) => {
       state.post.imageUrl = event.target.value;
       if (event.target.value) state.post.preview = '';
+    });
+
+    app.querySelectorAll('[data-stock-image]').forEach((btn) => {
+      btn.onclick = () => {
+        snapshotPostForm();
+        state.post.imageUrl = btn.dataset.stockImage;
+        state.post.preview = btn.dataset.stockImage;
+        state.post.fileName = 'Готовая картинка';
+        render();
+      };
     });
 
     app.querySelectorAll('[data-open-post]').forEach((btn) => {
@@ -1182,7 +1260,7 @@
         return;
       }
       const me = await API.me();
-      if (!me.user || !['OWNER', 'ADMIN', 'CURATOR'].includes(me.user.role)) {
+      if (!me.user || !['OWNER', 'ADMIN'].includes(me.user.role)) {
         API.clearToken();
         renderLogin();
         return;
