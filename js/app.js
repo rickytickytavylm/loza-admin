@@ -89,7 +89,7 @@
       <div class="stock-image-grid">
         ${state.stockImages.map((url) => `
           <button type="button" class="stock-image-btn${selectedUrl === url ? ' is-active' : ''}" data-stock-image="${esc(url)}" aria-label="Выбрать картинку">
-            <img src="${esc(url)}" alt="" />
+            <span class="stock-image-frame"><img src="${esc(url)}" alt="" /></span>
           </button>`).join('')}
       </div>
     </div>`;
