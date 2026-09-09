@@ -99,6 +99,8 @@
       request(`/admin/users/${userId}/grant`, { method: 'POST', body: JSON.stringify(data) }),
     updateUser: (userId, data) =>
       request(`/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    revokeAccess: (userId, data) =>
+      request(`/admin/users/${userId}/revoke`, { method: 'POST', body: JSON.stringify(data || {}) }),
     announce: (data) =>
       request('/admin/announce', { method: 'POST', body: JSON.stringify(data) }),
     movies: () => request('/admin/movies'),

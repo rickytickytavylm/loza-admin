@@ -22,7 +22,7 @@
     librarySections: [],
     contentForm: { sectionSlug: 'podcasts', title: '', summary: '', mediaUrl: '', type: 'VIDEO', coverUrl: '' },
     announce: { body: '', pin: true },
-    post: { title: '', body: '', imageUrl: '', preview: '', fileName: '' },
+    post: { title: '', body: '', imageUrl: '', videoUrl: '', preview: '', fileName: '' },
     stockImages: [
       'https://lozapsy.help/assets/webp/background01.webp',
       'https://lozapsy.help/assets/webp/background02.webp',
@@ -304,6 +304,7 @@
             <option value="club_plus_30">Клуб Плюс</option>
           </select>
           <button type="button" class="ok-btn" data-grant="${esc(entry.id)}">Выдать доступ</button>
+          <button type="button" class="ghost-btn" data-revoke="${esc(entry.id)}">Забрать доступ</button>
           ${roleChoices(entry).length ? `
           <select data-role-select="${esc(entry.id)}">
             ${roleChoices(entry).map((role) => `<option value="${role}" ${entry.role === role ? 'selected' : ''}>${esc(roleLabel(role))}</option>`).join('')}
@@ -318,7 +319,7 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Участники</h2>
-      <p class="muted">Доступ без оплаты: выберите продукт и нажмите «Выдать доступ». Если куплено несколько продуктов, все действующие видны в одной строке.</p>
+      <p class="muted">Ниже весь список. Счётчик «С доступом» — у кого сейчас открыт продукт. «Медиатека. Теория» даёт 30 дней. Чтобы забрать доступ, выберите продукт и нажмите «Забрать доступ». «Заблокировать» полностью закрывает вход в приложение. Если выдать доступ заблокированному, блок снимается.</p>
       <div class="toolbar">
         <input id="user-query" value="${esc(state.userQuery)}" placeholder="Имя, почта или телефон" />
         <select id="user-filter">
@@ -383,8 +384,9 @@
         <h2>Пост в ленту приложения</h2>
         <p class="muted">Это публичная лента PWA, не чат. Картинка грузится на Timeweb.</p>
         <form class="admin-form" id="post-form">
-          <label>Заголовок (необязательно)<input id="post-title" value="${esc(p.title)}" /></label>
+          <label>Заголовок, его видят в ленте<input id="post-title" value="${esc(p.title)}" /></label>
           <label>Текст поста<textarea id="post-body" required rows="6">${esc(p.body)}</textarea></label>
+          <label>Видео Кинескоп, если нужно<input id="post-video" value="${esc(p.videoUrl || '')}" placeholder="https://kinescope.io/..." /></label>
           <div class="image-attach">
             <input id="post-file" accept="image/jpeg,image/png,image/webp,image/gif" type="file" hidden />
             <button type="button" class="image-attach-btn${hasImage ? ' has-image' : ''}" id="post-pick-image" ${state.uploading ? 'disabled' : ''}>
@@ -442,6 +444,7 @@
       <form class="admin-form" id="post-edit-form">
         <label>Заголовок<input id="edit-post-title" value="${esc(post.title || '')}" /></label>
         <label>Текст<textarea id="edit-post-body" required rows="7">${esc(post.body || '')}</textarea></label>
+        <label>Видео Кинескоп<input id="edit-post-video" value="${esc(post.videoUrl || '')}" placeholder="https://kinescope.io/..." /></label>
         <label>URL картинки<input id="edit-post-image" value="${esc(post.imageUrl || '')}" placeholder="https://…" /></label>
         ${stockImagePicker(post.imageUrl || '')}
         ${post.imageUrl ? `<div class="admin-image-preview"><img alt="" src="${esc(post.imageUrl)}" /></div>` : ''}
@@ -667,7 +670,7 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Добавить в медиатеку</h2>
-      <p class="muted">Видео сначала загрузите в Кинескоп, сюда вставьте ссылку. Карточка сразу появится в клубе.</p>
+      <p class="muted">Видео: сначала Кинескоп, сюда ссылка kinescope.io. Аудио: прямая ссылка на mp3, не Яндекс.Диск. Раздел «Киноклуб» тоже здесь. Чтобы удалить материал, нажмите «Удалить» в списке ниже.</p>
       <form class="admin-form" id="content-form">
         <div class="admin-form-row">
           <label>Раздел
@@ -805,7 +808,10 @@
         state.librarySections = data.sections || [];
         render();
       } catch (error) {
-        state.status.content = error instanceof Error ? error.message : 'Не удалось сохранить';
+        const code = error instanceof Error ? error.message : '';
+        state.status.content = code === 'YANDEX_DISK_LINK'
+          ? 'Ссылка с Яндекс.Диска не подойдёт. Нужен Кинескоп или прямая ссылка на mp3.'
+          : (code || 'Не удалось сохранить');
         render();
       }
     });
@@ -850,12 +856,29 @@
         const select = app.querySelector(`[data-grant-plan="${btn.dataset.grant}"]`);
         try {
           await API.grantAccess(btn.dataset.grant, { planCode: select?.value || 'library_30' });
-          state.status.user = 'Доступ выдан на сервере';
+          state.status.user = 'Доступ выдан. Если человек был в блоке, вход снова открыт.';
           await reloadUsers();
           state.summary = await API.summary();
           render();
         } catch (error) {
           state.status.user = error instanceof Error ? error.message : 'Не удалось выдать доступ — нужен деплой backend';
+          render();
+        }
+      };
+    });
+
+    app.querySelectorAll('[data-revoke]').forEach((btn) => {
+      btn.onclick = async () => {
+        const select = app.querySelector(`[data-grant-plan="${btn.dataset.revoke}"]`);
+        if (!window.confirm('Забрать доступ к выбранному продукту?')) return;
+        try {
+          await API.revokeAccess(btn.dataset.revoke, { planCode: select?.value || 'library_30' });
+          state.status.user = 'Доступ забран';
+          await reloadUsers();
+          state.summary = await API.summary();
+          render();
+        } catch (error) {
+          state.status.user = error instanceof Error ? error.message : 'Не удалось забрать доступ';
           render();
         }
       };
@@ -913,11 +936,17 @@
           pin: state.announce.pin,
         });
         state.announce.body = '';
-        state.status.announce = 'Опубликовано в Ленте клуба';
+        state.status.announce = 'Опубликовано в чате Анонсы';
         await reloadChats();
         render();
       } catch (error) {
-        state.status.announce = error instanceof Error ? error.message : 'Не удалось опубликовать анонс';
+        const code = error instanceof Error ? error.message : '';
+        const text = {
+          FORBIDDEN: 'Анонсы из админки публикует только админ.',
+          CHAT_ROOM_NOT_FOUND: 'Чат Анонсы не найден.',
+          ANNOUNCE_INVALID: 'Проверьте текст. Он не должен быть пустым.',
+        }[code];
+        state.status.announce = text || code || 'Не удалось опубликовать анонс';
         render();
       }
     });
@@ -981,6 +1010,7 @@
             title: document.getElementById('edit-post-title').value.trim() || null,
             body: document.getElementById('edit-post-body').value.trim(),
             imageUrl: document.getElementById('edit-post-image').value.trim() || null,
+            videoUrl: document.getElementById('edit-post-video')?.value.trim() || null,
           });
           state.status.post = 'Пост сохранён';
           await reloadFeedPosts();
@@ -1040,6 +1070,7 @@
       event.preventDefault();
       state.post.title = document.getElementById('post-title').value;
       state.post.body = document.getElementById('post-body').value;
+      state.post.videoUrl = document.getElementById('post-video')?.value.trim() || '';
       state.post.imageUrl = document.getElementById('post-image-url')?.value.trim() || state.post.imageUrl;
       state.status.post = '';
       try {
@@ -1047,8 +1078,9 @@
           title: state.post.title.trim() || undefined,
           body: state.post.body.trim(),
           imageUrl: state.post.imageUrl || undefined,
+          videoUrl: state.post.videoUrl || undefined,
         });
-        state.post = { title: '', body: '', imageUrl: '', preview: '', fileName: '' };
+        state.post = { title: '', body: '', imageUrl: '', videoUrl: '', preview: '', fileName: '' };
         state.status.post = 'Пост опубликован в ленте';
         state.summary = await API.summary();
         await reloadFeedPosts();
