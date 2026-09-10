@@ -672,16 +672,24 @@
         { slug: 'club_reviews', title: 'Разборы участниц клуба' },
         { slug: 'movies', title: 'Киноклуб' },
       ];
+    const typeLabel = (type) => ({
+      VIDEO: 'Видео',
+      AUDIO: 'Аудио',
+      TEXT: 'Текст',
+      LIVE: 'Эфир',
+    }[type] || type || '');
+    const mediaKind = (url) => {
+      if (!url) return '';
+      if (/kinescope/i.test(url)) return 'Кинескоп';
+      return 'Ссылка';
+    };
     const list = state.library.map((entry) => `
       <article class="feed-admin-card">
-        <div class="feed-admin-top">
-          <div>
-            <strong>${esc(entry.title)}</strong>
-            <span class="muted">${esc(entry.section?.title || '')} · ${esc(entry.type || '')}${entry.mediaUrl ? ` · ${/kinescope/i.test(entry.mediaUrl) ? 'Кинескоп' : 'ссылка'}` : ''}</span>
-          </div>
-        </div>
         ${entry.coverUrl ? `<img class="feed-admin-thumb" src="${esc(entry.coverUrl)}" alt="" />` : ''}
-        ${entry.mediaUrl ? `<p class="muted">${esc(entry.mediaUrl)}</p>` : ''}
+        <div class="feed-admin-copy">
+          <strong>${esc(entry.title)}</strong>
+          <span class="muted">${[entry.section?.title, typeLabel(entry.type), mediaKind(entry.mediaUrl)].filter(Boolean).join(' · ')}</span>
+        </div>
         <button type="button" class="danger-btn content-del-btn" data-del-content="${esc(entry.id)}">Удалить</button>
       </article>`).join('');
 
