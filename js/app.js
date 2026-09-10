@@ -20,6 +20,7 @@
     paymentQuery: '',
     library: [],
     librarySections: [],
+    contentFilter: 'all',
     contentForm: { sectionSlug: 'podcasts', title: '', summary: '', mediaUrl: '', type: 'VIDEO', coverUrl: '' },
     announce: { body: '', pin: true },
     post: { title: '', body: '', imageUrl: '', videoUrl: '', preview: '', fileName: '' },
@@ -211,7 +212,7 @@
       users: [[s.users, 'Пользователи'], [s.paidUsers, 'С оплатой']],
       payments: [[s.paidUsers, 'С оплатой'], [s.pendingPayments, 'Ждут оплату']],
       chats: [[s.rooms, 'Чаты'], [s.messagesWeek, 'Сообщений / 7дн']],
-      movies: [[s.movies, 'Фильмы'], [s.content, 'Материалы']],
+      content: [[s.content, 'Материалы'], [s.movies, 'Киноклуб']],
     }[state.tab] || [[s.users, 'Пользователи'], [s.paidUsers, 'С доступом']];
 
     return `<section class="admin-stats admin-stats-compact">
@@ -660,18 +661,29 @@
     </section>`;
   }
 
+  function contentSections() {
+    const fallback = [
+      { slug: 'podcasts', title: 'Подкасты' },
+      { slug: 'questions', title: 'Вопросы и ответы' },
+      { slug: 'webinars', title: 'Эфиры и вебинары' },
+      { slug: 'movies', title: 'Киноклуб' },
+      { slug: 'home_reviews', title: 'Задания' },
+      { slug: 'club_reviews', title: 'Разборы' },
+    ];
+    const bySlug = new Map(fallback.map((item) => [item.slug, item]));
+    (state.librarySections || []).forEach((item) => {
+      if (!item?.slug) return;
+      bySlug.set(item.slug, { slug: item.slug, title: item.title || bySlug.get(item.slug)?.title || item.slug });
+    });
+    if (!bySlug.has('movies')) bySlug.set('movies', { slug: 'movies', title: 'Киноклуб' });
+    return [...bySlug.values()];
+  }
+
   function renderContent() {
     const f = state.contentForm;
-    const sections = state.librarySections.length
-      ? state.librarySections
-      : [
-        { slug: 'podcasts', title: 'Подкасты' },
-        { slug: 'webinars', title: 'Эфиры и вебинары' },
-        { slug: 'questions', title: 'Вопросы и ответы' },
-        { slug: 'home_reviews', title: 'Разбор домашнего' },
-        { slug: 'club_reviews', title: 'Разборы участниц клуба' },
-        { slug: 'movies', title: 'Киноклуб' },
-      ];
+    const sections = contentSections();
+    const filter = state.contentFilter || 'all';
+    const visible = state.library.filter((entry) => filter === 'all' || entry.section?.slug === filter);
     const typeLabel = (type) => ({
       VIDEO: 'Видео',
       AUDIO: 'Аудио',
@@ -683,7 +695,14 @@
       if (/kinescope/i.test(url)) return 'Кинескоп';
       return 'Ссылка';
     };
-    const list = state.library.map((entry) => `
+    const chips = `
+      <nav class="content-section-nav" aria-label="Разделы медиатеки">
+        <button type="button" class="${filter === 'all' ? 'is-active' : ''}" data-content-filter="all">Все</button>
+        ${sections.map((section) => `
+          <button type="button" class="${filter === section.slug ? 'is-active' : ''}" data-content-filter="${esc(section.slug)}">${esc(section.title)}</button>
+        `).join('')}
+      </nav>`;
+    const list = visible.map((entry) => `
       <article class="feed-admin-card">
         ${entry.coverUrl ? `<img class="feed-admin-thumb" src="${esc(entry.coverUrl)}" alt="" />` : ''}
         <div class="feed-admin-copy">
@@ -695,7 +714,8 @@
 
     return `<section class="admin-card tab-panel">
       <h2>Добавить в медиатеку</h2>
-      <p class="muted">Киноклуб публикуйте здесь как обычное видео: раздел «Киноклуб», ссылка kinescope.io. Аудио: прямая ссылка на mp3, не Яндекс.Диск. Кнопка «Удалить» под каждым материалом в списке ниже.</p>
+      ${chips}
+      <p class="muted">Киноклуб теперь здесь, отдельной вкладки больше нет. Нажмите «Киноклуб», вставьте kinescope.io и опубликуйте как обычное видео. Аудио: прямая ссылка на mp3, не Яндекс.Диск.</p>
       <form class="admin-form" id="content-form">
         <div class="admin-form-row">
           <label>Раздел
@@ -723,8 +743,8 @@
       </form>
     </section>
     <section class="admin-card tab-panel">
-      <h2>Последние материалы</h2>
-      <div class="feed-admin-list">${list || '<p class="muted">Пока ничего не добавляли</p>'}</div>
+      <h2>${filter === 'movies' ? 'Киноклуб' : 'Последние материалы'}</h2>
+      <div class="feed-admin-list">${list || `<p class="muted">${filter === 'movies' ? 'В киноклубе пока нет видео. Добавьте разбор сверху.' : 'Пока ничего не добавляли'}</p>`}</div>
     </section>`;
   }
 
@@ -737,6 +757,7 @@
     if (state.tab === 'chats') return selectedRoom() ? renderChatThread(selectedRoom()) : renderChatRoomList();
     if (state.tab === 'movies') {
       state.tab = 'content';
+      state.contentFilter = 'movies';
       state.contentForm.sectionSlug = 'movies';
       return renderContent();
     }
@@ -835,6 +856,15 @@
           : (code || 'Не удалось сохранить');
         render();
       }
+    });
+    app.querySelectorAll('[data-content-filter]').forEach((btn) => {
+      btn.onclick = () => {
+        snapshotContentForm();
+        const next = btn.dataset.contentFilter;
+        state.contentFilter = next;
+        if (next && next !== 'all') state.contentForm.sectionSlug = next;
+        render();
+      };
     });
     app.querySelectorAll('[data-stock-image]').forEach((btn) => {
       btn.onclick = () => {

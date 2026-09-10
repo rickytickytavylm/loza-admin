@@ -187,6 +187,29 @@ button:active { transform: translateY(0) scale(0.985); }
   font-weight: 800;
 }
 
+.content-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 4px 0 12px;
+}
+
+.content-section-nav button {
+  padding: 8px 12px;
+  border-radius: 999px;
+  color: var(--plum-deep);
+  background: var(--plum-soft);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.content-section-nav button.is-active {
+  color: #fff;
+  background: linear-gradient(135deg, #8f7aae, var(--plum-deep));
+}
+
 .admin-form {
   display: grid;
   gap: 14px;
