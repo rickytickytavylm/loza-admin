@@ -1132,9 +1132,16 @@ button.danger {
 
 .feed-admin-top {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+}
+
+.content-del-btn {
+  justify-self: start;
+  width: fit-content;
+  white-space: nowrap;
 }
 
 .feed-admin-top strong {
@@ -1310,6 +1317,7 @@ button.danger {
   box-shadow: none;
   font-size: 12px;
   font-weight: 800;
+  white-space: nowrap;
 }
 
 .user-actions .ok-btn {

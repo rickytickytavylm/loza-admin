@@ -278,8 +278,8 @@
         .filter((item) => item.active && item.accessUntil && new Date(item.accessUntil).getTime() > now);
       const payDetail = activeSubs.length
         ? activeSubs.map((item) => `${item.planName || 'Подписка'} · до ${fmtDate(item.accessUntil)}`).join(' · ')
-        : (entry.lastPayment
-          ? `${entry.lastPayment.planName || entry.lastPayment.provider} · ${entry.lastPayment.amountRub || '—'} ₽`
+        : (entry.payStatus === 'pending'
+          ? 'Начала оплату, ещё не оплатила'
           : 'Без оплаты');
       return `<article class="user-card">
         <div class="user-card-head">
@@ -382,7 +382,7 @@
     return `
       <section class="admin-card tab-panel">
         <h2>Пост в ленту приложения</h2>
-        <p class="muted">Это публичная лента PWA, не чат. Картинка грузится на Timeweb.</p>
+        <p class="muted">Лента клуба. Картинку лучше прикрепить файлом. Ссылка vk.com/photo не подойдёт, нужна прямая картинка (jpg/png/webp или userapi.com). Видео: отдельное поле Кинескоп.</p>
         <form class="admin-form" id="post-form">
           <label>Заголовок, его видят в ленте<input id="post-title" value="${esc(p.title)}" /></label>
           <label>Текст поста<textarea id="post-body" required rows="6">${esc(p.body)}</textarea></label>
@@ -679,17 +679,15 @@
             <strong>${esc(entry.title)}</strong>
             <span class="muted">${esc(entry.section?.title || '')} · ${esc(entry.type || '')}${entry.mediaUrl ? ` · ${/kinescope/i.test(entry.mediaUrl) ? 'Кинескоп' : 'ссылка'}` : ''}</span>
           </div>
-          <div class="feed-admin-actions">
-            <button type="button" class="danger-btn" data-del-content="${esc(entry.id)}">Удалить</button>
-          </div>
         </div>
         ${entry.coverUrl ? `<img class="feed-admin-thumb" src="${esc(entry.coverUrl)}" alt="" />` : ''}
         ${entry.mediaUrl ? `<p class="muted">${esc(entry.mediaUrl)}</p>` : ''}
+        <button type="button" class="danger-btn content-del-btn" data-del-content="${esc(entry.id)}">Удалить</button>
       </article>`).join('');
 
     return `<section class="admin-card tab-panel">
       <h2>Добавить в медиатеку</h2>
-      <p class="muted">Видео: сначала Кинескоп, сюда ссылка kinescope.io. Аудио: прямая ссылка на mp3, не Яндекс.Диск. Раздел «Киноклуб» тоже здесь. Чтобы удалить материал, нажмите «Удалить» в списке ниже.</p>
+      <p class="muted">Киноклуб публикуйте здесь как обычное видео: раздел «Киноклуб», ссылка kinescope.io. Аудио: прямая ссылка на mp3, не Яндекс.Диск. Кнопка «Удалить» под каждым материалом в списке ниже.</p>
       <form class="admin-form" id="content-form">
         <div class="admin-form-row">
           <label>Раздел
@@ -729,7 +727,11 @@
     if (state.tab === 'users') return renderUsers();
     if (state.tab === 'payments') return renderPayments();
     if (state.tab === 'chats') return selectedRoom() ? renderChatThread(selectedRoom()) : renderChatRoomList();
-    if (state.tab === 'movies') return renderMovies();
+    if (state.tab === 'movies') {
+      state.tab = 'content';
+      state.contentForm.sectionSlug = 'movies';
+      return renderContent();
+    }
     const post = selectedFeedPost();
     if (post) return renderPostEditor(post);
     return renderPostForm();
@@ -747,7 +749,6 @@
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${liveChip()}
-          <button type="button" class="ghost-btn" id="movies-btn">Кино</button>
           <button type="button" id="logout-btn">Выйти</button>
         </div>
       </header>
@@ -764,12 +765,6 @@
       state.user = null;
       render();
     };
-
-    document.getElementById('movies-btn')?.addEventListener('click', () => {
-      state.tab = 'movies';
-      state.selectedMovieId = '';
-      render();
-    });
 
     app.querySelectorAll('[data-tab]').forEach((btn) => {
       btn.onclick = () => {
@@ -789,7 +784,6 @@
     if (state.tab === 'payments') bindPayments();
     if (state.tab === 'content') bindContent();
     if (state.tab === 'announce') bindAnnounce();
-    if (state.tab === 'movies') bindMovies();
   }
 
   function bindPayments() {

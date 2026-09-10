@@ -1,4 +1,4 @@
-const ASSET_VERSION = '8';
+const ASSET_VERSION = '9';
 const CACHE = `loza-admin-v${ASSET_VERSION}`;
 const PRECACHE = [
   './',
