@@ -445,9 +445,28 @@
         <label>Заголовок<input id="edit-post-title" value="${esc(post.title || '')}" /></label>
         <label>Текст<textarea id="edit-post-body" required rows="7">${esc(post.body || '')}</textarea></label>
         <label>Видео Кинескоп<input id="edit-post-video" value="${esc(post.videoUrl || '')}" placeholder="https://kinescope.io/..." /></label>
-        <label>URL картинки<input id="edit-post-image" value="${esc(post.imageUrl || '')}" placeholder="https://…" /></label>
-        ${stockImagePicker(post.imageUrl || '')}
-        ${post.imageUrl ? `<div class="admin-image-preview"><img alt="" src="${esc(post.imageUrl)}" /></div>` : ''}
+        <div class="image-attach">
+          <input id="edit-post-file" accept="image/jpeg,image/png,image/webp,image/gif" type="file" hidden />
+          <button type="button" class="image-attach-btn${post.imageUrl ? ' has-image' : ''}" id="edit-post-pick-image" ${state.uploading ? 'disabled' : ''}>
+            <span class="image-attach-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                <rect x="3" y="5" width="18" height="14" rx="3"/>
+                <circle cx="8.5" cy="10" r="1.5"/>
+                <path d="m21 15-4.5-4.5L8 19"/>
+              </svg>
+            </span>
+            <span class="image-attach-copy">
+              <strong>${state.uploading ? 'Загружаем…' : post.imageUrl ? 'Заменить картинку' : 'Прикрепить картинку'}</strong>
+              <em>JPG, PNG или WebP до 6 МБ</em>
+            </span>
+          </button>
+          ${post.imageUrl ? `<div class="admin-image-preview"><img alt="" src="${esc(post.imageUrl)}" /><button type="button" id="edit-post-clear-image">Убрать</button></div>` : ''}
+          ${stockImagePicker(post.imageUrl || '')}
+        </div>
+        <details class="url-details">
+          <summary>Или вставить URL картинки</summary>
+          <label class="url-label"><input id="edit-post-image" value="${esc(post.imageUrl || '')}" placeholder="https://…" /></label>
+        </details>
         ${state.status.post ? `<p class="status">${esc(state.status.post)}</p>` : ''}
         <div class="feed-admin-actions">
           <button type="submit">Сохранить</button>
@@ -1036,15 +1055,48 @@
         }
       });
 
+      const editPost = selectedFeedPost();
+      const setEditImage = (url) => {
+        if (editPost) {
+          // Keep unsaved text edits across the re-render.
+          editPost.title = document.getElementById('edit-post-title')?.value ?? editPost.title;
+          editPost.body = document.getElementById('edit-post-body')?.value ?? editPost.body;
+          editPost.videoUrl = document.getElementById('edit-post-video')?.value ?? editPost.videoUrl;
+          editPost.imageUrl = url;
+        }
+        const field = document.getElementById('edit-post-image');
+        if (field) field.value = url;
+        render();
+      };
+
       app.querySelectorAll('[data-stock-image]').forEach((btn) => {
-        btn.onclick = () => {
-          const field = document.getElementById('edit-post-image');
-          if (field) field.value = btn.dataset.stockImage;
-          app.querySelectorAll('[data-stock-image]').forEach((item) => {
-            item.classList.toggle('is-active', item === btn);
-          });
-        };
+        btn.onclick = () => setEditImage(btn.dataset.stockImage);
       });
+
+      const editFile = document.getElementById('edit-post-file');
+      const editPick = document.getElementById('edit-post-pick-image');
+      if (editPick && editFile) {
+        editPick.onclick = () => editFile.click();
+        editFile.onchange = async () => {
+          const file = editFile.files?.[0];
+          if (!file) return;
+          state.uploading = true;
+          state.status.post = '';
+          render();
+          try {
+            const uploaded = await API.uploadImage(file);
+            state.status.post = 'Картинка загружена, нажмите «Сохранить»';
+            state.uploading = false;
+            setEditImage(uploaded.url);
+          } catch (error) {
+            state.uploading = false;
+            state.status.post = error instanceof Error ? error.message : 'Не удалось загрузить картинку';
+            render();
+          }
+        };
+      }
+
+      document.getElementById('edit-post-clear-image')?.addEventListener('click', () => setEditImage(''));
 
       app.querySelectorAll('[data-del-comment]').forEach((btn) => {
         btn.onclick = async () => {
