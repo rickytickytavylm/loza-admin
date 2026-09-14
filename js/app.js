@@ -21,7 +21,7 @@
     library: [],
     librarySections: [],
     contentFilter: 'all',
-    contentForm: { sectionSlug: 'podcasts', title: '', summary: '', mediaUrl: '', type: 'VIDEO', coverUrl: '' },
+    contentForm: { sectionSlug: 'podcasts', title: '', summary: '', mediaUrl: '', type: 'VIDEO', coverUrl: '', audioFileName: '' },
     announce: { body: '', pin: true },
     post: { title: '', body: '', imageUrl: '', videoUrl: '', preview: '', fileName: '' },
     stockImages: [
@@ -693,8 +693,33 @@
     const mediaKind = (url) => {
       if (!url) return '';
       if (/kinescope/i.test(url)) return 'Кинескоп';
+      if (/storage\.yandexcloud\.net/i.test(url)) return 'Бакет';
       return 'Ссылка';
     };
+    const hasAudio = f.type === 'AUDIO' && Boolean(f.mediaUrl);
+    const mediaField = f.type === 'AUDIO'
+      ? `<div class="image-attach">
+          <input id="content-audio-file" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/ogg,.mp3,.m4a,.aac,.wav,.ogg" type="file" hidden />
+          <button type="button" class="image-attach-btn${hasAudio ? ' has-image' : ''}" id="content-pick-audio" ${state.uploading ? 'disabled' : ''}>
+            <span class="image-attach-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M9 18V6l10-2v12"/>
+                <circle cx="7" cy="18" r="2.4"/>
+                <circle cx="17" cy="16" r="2.4"/>
+              </svg>
+            </span>
+            <span class="image-attach-copy">
+              <strong>${state.uploading ? 'Загружаем в бакет…' : hasAudio ? 'Аудио в бакете' : 'Прикрепить аудио'}</strong>
+              <em>${hasAudio ? esc(f.audioFileName || 'Готово') : 'MP3 или M4A до 80 МБ'}</em>
+            </span>
+          </button>
+          ${hasAudio ? `<button type="button" id="content-clear-audio">Убрать аудио</button>` : ''}
+        </div>
+        <details class="url-details">
+          <summary>Или вставить прямую ссылку на mp3</summary>
+          <label class="url-label"><input id="content-media" placeholder="https://…" value="${esc(f.mediaUrl)}" /></label>
+        </details>`
+      : `<label>Ссылка на видео<input id="content-media" value="${esc(f.mediaUrl)}" placeholder="https://kinescope.io/..." /></label>`;
     const chips = `
       <nav class="content-section-nav" aria-label="Разделы медиатеки">
         <button type="button" class="${filter === 'all' ? 'is-active' : ''}" data-content-filter="all">Все</button>
@@ -715,7 +740,7 @@
     return `<section class="admin-card tab-panel">
       <h2>Добавить в медиатеку</h2>
       ${chips}
-      <p class="muted">Киноклуб теперь здесь, отдельной вкладки больше нет. Нажмите «Киноклуб», вставьте kinescope.io и опубликуйте как обычное видео. Аудио: прямая ссылка на mp3, не Яндекс.Диск.</p>
+      <p class="muted">Киноклуб: kinescope.io. Аудио: прикрепите файл, он уйдёт в бакет. Яндекс.Диск не подойдёт.</p>
       <form class="admin-form" id="content-form">
         <div class="admin-form-row">
           <label>Раздел
@@ -734,12 +759,12 @@
         </div>
         <label>Название<input id="content-title" required value="${esc(f.title)}" placeholder="Как в карточке увидят участники" /></label>
         <label>Короткое описание<textarea id="content-summary" rows="3" placeholder="О чём материал">${esc(f.summary)}</textarea></label>
-        <label>Ссылка на видео или аудио<input id="content-media" value="${esc(f.mediaUrl)}" placeholder="https://kinescope.io/..." /></label>
+        ${mediaField}
         <div class="image-attach">
           ${stockImagePicker(f.coverUrl, 'Картинка карточки в клубе')}
         </div>
         ${state.status.content ? `<p class="status">${esc(state.status.content)}</p>` : ''}
-        <button type="submit">Опубликовать в клуб</button>
+        <button type="submit" ${state.uploading ? 'disabled' : ''}>${state.uploading ? 'Подождите…' : 'Опубликовать в клуб'}</button>
       </form>
     </section>
     <section class="admin-card tab-panel">
@@ -838,12 +863,72 @@
   }
 
   function bindContent() {
+    document.getElementById('content-type')?.addEventListener('change', () => {
+      snapshotContentForm();
+      render();
+    });
+    document.getElementById('content-section')?.addEventListener('change', () => {
+      snapshotContentForm();
+      if (state.contentForm.sectionSlug === 'podcasts' || state.contentForm.sectionSlug === 'questions') {
+        state.contentForm.type = 'AUDIO';
+        render();
+      }
+    });
+    const audioInput = document.getElementById('content-audio-file');
+    const audioPick = document.getElementById('content-pick-audio');
+    if (audioPick && audioInput) {
+      audioPick.onclick = () => audioInput.click();
+      audioInput.onchange = async () => {
+        const file = audioInput.files?.[0];
+        if (!file) return;
+        snapshotContentForm();
+        state.uploading = true;
+        state.contentForm.audioFileName = file.name;
+        state.contentForm.type = 'AUDIO';
+        state.status.content = '';
+        render();
+        try {
+          const uploaded = await API.uploadAudio(file);
+          state.contentForm.mediaUrl = uploaded.url || '';
+          state.contentForm.audioFileName = file.name;
+          state.status.content = uploaded.storage === 'bucket'
+            ? 'Аудио в бакете. Можно публиковать.'
+            : 'Аудио загружено. Можно публиковать.';
+        } catch (error) {
+          const code = error instanceof Error ? error.message : '';
+          state.contentForm.mediaUrl = '';
+          state.contentForm.audioFileName = '';
+          state.status.content = code === 'AUDIO_TOO_LARGE'
+            ? 'Файл больше 80 МБ'
+            : code === 'UNSUPPORTED_AUDIO_TYPE'
+              ? 'Нужен mp3 или m4a'
+              : (code || 'Не удалось загрузить аудио');
+        } finally {
+          state.uploading = false;
+          render();
+        }
+      };
+    }
+    document.getElementById('content-clear-audio')?.addEventListener('click', () => {
+      snapshotContentForm();
+      state.contentForm.mediaUrl = '';
+      state.contentForm.audioFileName = '';
+      render();
+    });
     document.getElementById('content-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       snapshotContentForm();
       try {
-        await API.createContent(state.contentForm);
-        state.contentForm = { ...state.contentForm, title: '', summary: '', mediaUrl: '', coverUrl: '' };
+        const payload = {
+          sectionSlug: state.contentForm.sectionSlug,
+          title: state.contentForm.title,
+          type: state.contentForm.type,
+          summary: state.contentForm.summary,
+          mediaUrl: state.contentForm.mediaUrl,
+          coverUrl: state.contentForm.coverUrl,
+        };
+        await API.createContent(payload);
+        state.contentForm = { ...state.contentForm, title: '', summary: '', mediaUrl: '', coverUrl: '', audioFileName: '' };
         state.status.content = 'Материал появился в клубе';
         const data = await API.content();
         state.library = data.entries || [];
@@ -852,7 +937,7 @@
       } catch (error) {
         const code = error instanceof Error ? error.message : '';
         state.status.content = code === 'YANDEX_DISK_LINK'
-          ? 'Ссылка с Яндекс.Диска не подойдёт. Нужен Кинескоп или прямая ссылка на mp3.'
+          ? 'Ссылка с Яндекс.Диска не подойдёт. Прикрепите файл или прямую ссылку на mp3.'
           : (code || 'Не удалось сохранить');
         render();
       }
@@ -863,6 +948,10 @@
         const next = btn.dataset.contentFilter;
         state.contentFilter = next;
         if (next && next !== 'all') state.contentForm.sectionSlug = next;
+        if (next === 'podcasts' || next === 'questions') state.contentForm.type = 'AUDIO';
+        if (next === 'movies' || next === 'webinars' || next === 'home_reviews' || next === 'club_reviews') {
+          state.contentForm.type = 'VIDEO';
+        }
         render();
       };
     });

@@ -94,6 +94,11 @@
       body.append('file', file);
       return request('/admin/upload', { method: 'POST', body });
     },
+    uploadAudio: async (file) => {
+      const body = new FormData();
+      body.append('file', file);
+      return request('/admin/upload-audio', { method: 'POST', body });
+    },
     health: () => request('/health'),
     grantAccess: (userId, data) =>
       request(`/admin/users/${userId}/grant`, { method: 'POST', body: JSON.stringify(data) }),
