@@ -638,11 +638,11 @@ button:active { transform: translateY(0) scale(0.985); }
 
 .admin-image-preview img {
   width: 100%;
-  max-height: 160px;
-  object-fit: cover;
+  max-height: 280px;
+  object-fit: contain;
   border: 1px solid rgba(87, 65, 101, 0.1);
   border-radius: 17px;
-  background: #eee;
+  background: #efe8f6;
 }
 
 .admin-image-preview button {
@@ -1229,10 +1229,10 @@ button.danger {
 
 .feed-admin-thumb {
   display: block;
-  width: min(100%, 240px);
+  width: min(100%, 360px);
   height: auto;
-  aspect-ratio: 16 / 10;
-  object-fit: cover;
+  max-height: 280px;
+  object-fit: contain;
   border-radius: 14px;
   background: #efe8f6;
 }

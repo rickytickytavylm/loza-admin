@@ -779,7 +779,7 @@
       ${chips}
       <p class="muted">Киноклуб: kinescope.io. Аудио: прикрепите файл, он уйдёт в бакет. Яндекс.Диск не подойдёт.</p>
       ${editing && f.type === 'AUDIO' && !bucketAudio
-        ? '<p class="muted">Если меняете название, прикрепите аудио заново, чтобы звук не пропал.</p>'
+        ? '<p class="muted">Звук уже в клубе. Можно поменять название или прикрепить другой файл.</p>'
         : ''}
       <form class="admin-form" id="content-form">
         <div class="admin-form-row">
