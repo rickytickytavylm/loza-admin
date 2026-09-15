@@ -21,7 +21,8 @@
     library: [],
     librarySections: [],
     contentFilter: 'all',
-    contentForm: { sectionSlug: 'podcasts', title: '', summary: '', mediaUrl: '', type: 'VIDEO', coverUrl: '', audioFileName: '' },
+    contentQuery: '',
+    contentForm: { editId: '', sectionSlug: 'podcasts', title: '', summary: '', body: '', mediaUrl: '', type: 'VIDEO', coverUrl: '', audioFileName: '' },
     announce: { body: '', pin: true },
     post: { title: '', body: '', imageUrl: '', videoUrl: '', preview: '', fileName: '' },
     stockImages: [
@@ -679,11 +680,43 @@
     return [...bySlug.values()];
   }
 
+  function blankContentForm() {
+    return {
+      editId: '',
+      sectionSlug: state.contentForm.sectionSlug || 'podcasts',
+      title: '',
+      summary: '',
+      body: '',
+      mediaUrl: '',
+      type: state.contentForm.type || 'VIDEO',
+      coverUrl: '',
+      audioFileName: '',
+    };
+  }
+
+  function contentPayload() {
+    return {
+      sectionSlug: state.contentForm.sectionSlug,
+      title: state.contentForm.title,
+      type: state.contentForm.type,
+      summary: state.contentForm.summary,
+      body: state.contentForm.body,
+      mediaUrl: state.contentForm.mediaUrl,
+      coverUrl: state.contentForm.coverUrl,
+    };
+  }
+
   function renderContent() {
     const f = state.contentForm;
+    const editing = Boolean(f.editId);
     const sections = contentSections();
     const filter = state.contentFilter || 'all';
-    const visible = state.library.filter((entry) => filter === 'all' || entry.section?.slug === filter);
+    const query = (state.contentQuery || '').trim().toLowerCase();
+    const visible = state.library.filter((entry) => {
+      if (filter !== 'all' && entry.section?.slug !== filter) return false;
+      if (!query) return true;
+      return `${entry.title || ''} ${entry.summary || ''}`.toLowerCase().includes(query);
+    });
     const typeLabel = (type) => ({
       VIDEO: 'Видео',
       AUDIO: 'Аудио',
@@ -696,7 +729,8 @@
       if (/storage\.yandexcloud\.net/i.test(url)) return 'Бакет';
       return 'Ссылка';
     };
-    const hasAudio = f.type === 'AUDIO' && Boolean(f.mediaUrl);
+    const bucketAudio = /storage\.yandexcloud\.net/i.test(f.mediaUrl || '');
+    const hasAudio = f.type === 'AUDIO' && (Boolean(f.mediaUrl) || editing);
     const mediaField = f.type === 'AUDIO'
       ? `<div class="image-attach">
           <input id="content-audio-file" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/ogg,.mp3,.m4a,.aac,.wav,.ogg" type="file" hidden />
@@ -709,8 +743,8 @@
               </svg>
             </span>
             <span class="image-attach-copy">
-              <strong>${state.uploading ? 'Загружаем в бакет…' : hasAudio ? 'Аудио в бакете' : 'Прикрепить аудио'}</strong>
-              <em>${hasAudio ? esc(f.audioFileName || 'Готово') : 'MP3 или M4A до 80 МБ'}</em>
+              <strong>${state.uploading ? 'Загружаем в бакет…' : bucketAudio ? 'Аудио в бакете' : hasAudio ? 'Аудио уже в клубе' : 'Прикрепить аудио'}</strong>
+              <em>${hasAudio ? esc(f.audioFileName || (bucketAudio ? 'Готово' : 'Можно заменить файлом')) : 'MP3 или M4A до 80 МБ'}</em>
             </span>
           </button>
           ${hasAudio ? `<button type="button" id="content-clear-audio">Убрать аудио</button>` : ''}
@@ -734,13 +768,19 @@
           <strong>${esc(entry.title)}</strong>
           <span class="muted">${[entry.section?.title, typeLabel(entry.type), mediaKind(entry.mediaUrl)].filter(Boolean).join(' · ')}</span>
         </div>
-        <button type="button" class="danger-btn content-del-btn" data-del-content="${esc(entry.id)}">Удалить</button>
+        <div class="feed-admin-actions">
+          <button type="button" data-edit-content="${esc(entry.id)}">Изменить</button>
+          <button type="button" class="danger-btn content-del-btn" data-del-content="${esc(entry.id)}">Удалить</button>
+        </div>
       </article>`).join('');
 
     return `<section class="admin-card tab-panel">
-      <h2>Добавить в медиатеку</h2>
+      <h2>${editing ? 'Редактировать материал' : 'Добавить в медиатеку'}</h2>
       ${chips}
       <p class="muted">Киноклуб: kinescope.io. Аудио: прикрепите файл, он уйдёт в бакет. Яндекс.Диск не подойдёт.</p>
+      ${editing && f.type === 'AUDIO' && !bucketAudio
+        ? '<p class="muted">Если меняете название, прикрепите аудио заново, чтобы звук не пропал.</p>'
+        : ''}
       <form class="admin-form" id="content-form">
         <div class="admin-form-row">
           <label>Раздел
@@ -759,17 +799,22 @@
         </div>
         <label>Название<input id="content-title" required value="${esc(f.title)}" placeholder="Как в карточке увидят участники" /></label>
         <label>Короткое описание<textarea id="content-summary" rows="3" placeholder="О чём материал">${esc(f.summary)}</textarea></label>
+        <label>Текст материала<textarea id="content-body" rows="6" placeholder="Полный текст, если нужен">${esc(f.body)}</textarea></label>
         ${mediaField}
         <div class="image-attach">
           ${stockImagePicker(f.coverUrl, 'Картинка карточки в клубе')}
         </div>
         ${state.status.content ? `<p class="status">${esc(state.status.content)}</p>` : ''}
-        <button type="submit" ${state.uploading ? 'disabled' : ''}>${state.uploading ? 'Подождите…' : 'Опубликовать в клуб'}</button>
+        <div class="feed-admin-actions">
+          <button type="submit" ${state.uploading ? 'disabled' : ''}>${state.uploading ? 'Подождите…' : editing ? 'Сохранить' : 'Опубликовать в клуб'}</button>
+          ${editing ? '<button type="button" id="content-cancel-edit">Отменить</button>' : ''}
+        </div>
       </form>
     </section>
     <section class="admin-card tab-panel">
-      <h2>${filter === 'movies' ? 'Киноклуб' : 'Последние материалы'}</h2>
-      <div class="feed-admin-list">${list || `<p class="muted">${filter === 'movies' ? 'В киноклубе пока нет видео. Добавьте разбор сверху.' : 'Пока ничего не добавляли'}</p>`}</div>
+      <h2>${filter === 'movies' ? 'Киноклуб' : 'Материалы'}</h2>
+      <label>Найти<input id="content-query" value="${esc(state.contentQuery)}" placeholder="Название" /></label>
+      <div class="feed-admin-list">${list || `<p class="muted">${query ? 'Ничего не нашлось' : filter === 'movies' ? 'В киноклубе пока нет видео. Добавьте разбор сверху.' : 'Пока ничего не добавляли'}</p>`}</div>
     </section>`;
   }
 
@@ -854,11 +899,13 @@
     const type = document.getElementById('content-type');
     const title = document.getElementById('content-title');
     const summary = document.getElementById('content-summary');
+    const body = document.getElementById('content-body');
     const media = document.getElementById('content-media');
     if (section) state.contentForm.sectionSlug = section.value;
     if (type) state.contentForm.type = type.value;
     if (title) state.contentForm.title = title.value;
     if (summary) state.contentForm.summary = summary.value;
+    if (body) state.contentForm.body = body.value;
     if (media) state.contentForm.mediaUrl = media.value.trim();
   }
 
@@ -869,6 +916,7 @@
     });
     document.getElementById('content-section')?.addEventListener('change', () => {
       snapshotContentForm();
+      if (state.contentForm.editId) return;
       if (state.contentForm.sectionSlug === 'podcasts' || state.contentForm.sectionSlug === 'questions') {
         state.contentForm.type = 'AUDIO';
         render();
@@ -915,21 +963,26 @@
       state.contentForm.audioFileName = '';
       render();
     });
+    document.getElementById('content-cancel-edit')?.addEventListener('click', () => {
+      state.contentForm = blankContentForm();
+      state.status.content = '';
+      render();
+    });
+    const contentQuery = document.getElementById('content-query');
+    contentQuery?.addEventListener('input', (event) => { state.contentQuery = event.target.value; });
+    contentQuery?.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); snapshotContentForm(); render(); }
+    });
+    contentQuery?.addEventListener('blur', () => { snapshotContentForm(); render(); });
     document.getElementById('content-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       snapshotContentForm();
+      const editing = Boolean(state.contentForm.editId);
       try {
-        const payload = {
-          sectionSlug: state.contentForm.sectionSlug,
-          title: state.contentForm.title,
-          type: state.contentForm.type,
-          summary: state.contentForm.summary,
-          mediaUrl: state.contentForm.mediaUrl,
-          coverUrl: state.contentForm.coverUrl,
-        };
-        await API.createContent(payload);
-        state.contentForm = { ...state.contentForm, title: '', summary: '', mediaUrl: '', coverUrl: '', audioFileName: '' };
-        state.status.content = 'Материал появился в клубе';
+        if (editing) await API.updateContent(state.contentForm.editId, contentPayload());
+        else await API.createContent(contentPayload());
+        state.contentForm = blankContentForm();
+        state.status.content = editing ? 'Сохранили' : 'Материал появился в клубе';
         const data = await API.content();
         state.library = data.entries || [];
         state.librarySections = data.sections || [];
@@ -947,12 +1000,35 @@
         snapshotContentForm();
         const next = btn.dataset.contentFilter;
         state.contentFilter = next;
-        if (next && next !== 'all') state.contentForm.sectionSlug = next;
-        if (next === 'podcasts' || next === 'questions') state.contentForm.type = 'AUDIO';
-        if (next === 'movies' || next === 'webinars' || next === 'home_reviews' || next === 'club_reviews') {
-          state.contentForm.type = 'VIDEO';
+        if (!state.contentForm.editId && next && next !== 'all') state.contentForm.sectionSlug = next;
+        if (!state.contentForm.editId) {
+          if (next === 'podcasts' || next === 'questions') state.contentForm.type = 'AUDIO';
+          if (next === 'movies' || next === 'webinars' || next === 'home_reviews' || next === 'club_reviews') {
+            state.contentForm.type = 'VIDEO';
+          }
         }
         render();
+      };
+    });
+    app.querySelectorAll('[data-edit-content]').forEach((btn) => {
+      btn.onclick = () => {
+        const entry = state.library.find((item) => item.id === btn.dataset.editContent);
+        if (!entry) return;
+        state.contentForm = {
+          editId: entry.id,
+          sectionSlug: entry.section?.slug || 'podcasts',
+          title: entry.title || '',
+          type: entry.type || 'VIDEO',
+          summary: entry.summary || '',
+          body: entry.transcript || entry.body || '',
+          mediaUrl: entry.mediaUrl || '',
+          coverUrl: entry.coverUrl || '',
+          audioFileName: '',
+        };
+        state.contentFilter = entry.section?.slug || state.contentFilter;
+        state.status.content = '';
+        render();
+        document.getElementById('content-form')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       };
     });
     app.querySelectorAll('[data-stock-image]').forEach((btn) => {
@@ -967,6 +1043,9 @@
         if (!window.confirm('Удалить материал из клуба?')) return;
         try {
           await API.deleteContent(btn.dataset.delContent);
+          if (state.contentForm.editId === btn.dataset.delContent) {
+            state.contentForm = blankContentForm();
+          }
           state.library = state.library.filter((item) => item.id !== btn.dataset.delContent);
           state.status.content = 'Удалено';
           render();

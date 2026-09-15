@@ -1107,6 +1107,11 @@ button.danger {
     width: 100%;
     max-width: none;
   }
+  .feed-admin-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+  .feed-admin-actions button,
   .content-del-btn {
     width: 100%;
     justify-content: center;
