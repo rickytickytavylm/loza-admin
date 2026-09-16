@@ -372,7 +372,7 @@
             <span class="muted">${esc(post.author?.name || 'Лоза')} · ${fmtDateTime(post.createdAt)} · ${post._count?.comments || 0} комм.</span>
           </div>
           <div class="feed-admin-actions">
-            <button type="button" data-open-post="${esc(post.id)}">Открыть</button>
+            <button type="button" data-open-post="${esc(post.id)}">Изменить</button>
             <button type="button" class="danger-btn" data-del-post="${esc(post.id)}">Удалить</button>
           </div>
         </div>
