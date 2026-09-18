@@ -44,6 +44,9 @@
     });
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
+      if (response.status === 413) {
+        throw new Error(String(path || '').includes('audio') ? 'AUDIO_TOO_LARGE' : 'IMAGE_TOO_LARGE');
+      }
       throw new Error(payload.error || `API ${response.status}`);
     }
     return response.json();

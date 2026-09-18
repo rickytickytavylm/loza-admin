@@ -694,6 +694,27 @@
     };
   }
 
+  function normalizeAdminMediaUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const match = raw.match(/https?:\/\/(?:www\.)?kinescope\.io\/[^\s<>"']+/i);
+    if (match) return match[0].replace(/[),.;]+$/, '').replace(/\/embed\//i, '/');
+    return raw;
+  }
+
+  function contentStatusMessage(code) {
+    if (code === 'YANDEX_DISK_LINK') {
+      return 'Ссылка с Яндекс.Диска не подойдёт. Прикрепите файл или прямую ссылку на mp3.';
+    }
+    if (code === 'TITLE_REQUIRED') return 'Напишите название материала';
+    if (code === 'SECTION_NOT_FOUND') return 'Нет такого раздела';
+    if (code === 'VALIDATION_ERROR') return 'Слишком длинный текст или пустое название. Сократите или заполните поля.';
+    if (code === 'UNAUTHORIZED' || code === 'FORBIDDEN') return 'Войдите в админку снова';
+    if (code === 'AUDIO_TOO_LARGE') return 'Файл больше 80 МБ';
+    if (code === 'INTERNAL_ERROR') return 'Сервер не сохранил материал. Попробуйте ещё раз.';
+    return code || 'Не удалось сохранить';
+  }
+
   function contentPayload() {
     return {
       sectionSlug: state.contentForm.sectionSlug,
@@ -701,7 +722,7 @@
       type: state.contentForm.type,
       summary: state.contentForm.summary,
       body: state.contentForm.body,
-      mediaUrl: state.contentForm.mediaUrl,
+      mediaUrl: normalizeAdminMediaUrl(state.contentForm.mediaUrl),
       coverUrl: state.contentForm.coverUrl,
     };
   }
@@ -906,7 +927,10 @@
     if (title) state.contentForm.title = title.value;
     if (summary) state.contentForm.summary = summary.value;
     if (body) state.contentForm.body = body.value;
-    if (media) state.contentForm.mediaUrl = media.value.trim();
+    if (media) {
+      const typed = media.value.trim();
+      if (typed || !state.contentForm.mediaUrl) state.contentForm.mediaUrl = typed;
+    }
   }
 
   function bindContent() {
@@ -977,7 +1001,11 @@
     document.getElementById('content-form')?.addEventListener('submit', async (event) => {
       event.preventDefault();
       snapshotContentForm();
+      state.contentForm.mediaUrl = normalizeAdminMediaUrl(state.contentForm.mediaUrl);
       const editing = Boolean(state.contentForm.editId);
+      state.uploading = true;
+      state.status.content = editing ? 'Сохраняем…' : 'Публикуем…';
+      render();
       try {
         if (editing) await API.updateContent(state.contentForm.editId, contentPayload());
         else await API.createContent(contentPayload());
@@ -986,12 +1014,11 @@
         const data = await API.content();
         state.library = data.entries || [];
         state.librarySections = data.sections || [];
-        render();
       } catch (error) {
         const code = error instanceof Error ? error.message : '';
-        state.status.content = code === 'YANDEX_DISK_LINK'
-          ? 'Ссылка с Яндекс.Диска не подойдёт. Прикрепите файл или прямую ссылку на mp3.'
-          : (code || 'Не удалось сохранить');
+        state.status.content = contentStatusMessage(code);
+      } finally {
+        state.uploading = false;
         render();
       }
     });
