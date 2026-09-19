@@ -819,8 +819,8 @@
           </label>
         </div>
         <label>Название<input id="content-title" required value="${esc(f.title)}" placeholder="Как в карточке увидят участники" /></label>
-        <label>Короткое описание<textarea id="content-summary" rows="3" placeholder="О чём материал">${esc(f.summary)}</textarea></label>
-        <label>Текст материала<textarea id="content-body" rows="6" placeholder="Полный текст, если нужен">${esc(f.body)}</textarea></label>
+        <label>Короткое описание<span class="muted">В карточке у всех, даже без оплаты</span><textarea id="content-summary" rows="3" placeholder="О чём материал. Это видят все.">${esc(f.summary)}</textarea></label>
+        <label>Текст материала<span class="muted">Практики и полный текст. Только у тех, кто оплатил</span><textarea id="content-body" rows="6" placeholder="То, что видят участники после оплаты">${esc(f.body)}</textarea></label>
         ${mediaField}
         <div class="image-attach">
           ${stockImagePicker(f.coverUrl, 'Картинка карточки в клубе')}
