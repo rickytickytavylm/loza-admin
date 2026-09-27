@@ -45,7 +45,10 @@
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
       if (response.status === 413) {
-        throw new Error(String(path || '').includes('audio') ? 'AUDIO_TOO_LARGE' : 'IMAGE_TOO_LARGE');
+        const route = String(path || '');
+        if (route.includes('audio')) throw new Error('AUDIO_TOO_LARGE');
+        if (route.includes('video')) throw new Error('VIDEO_TOO_LARGE');
+        throw new Error('IMAGE_TOO_LARGE');
       }
       throw new Error(payload.error || `API ${response.status}`);
     }
@@ -101,6 +104,11 @@
       const body = new FormData();
       body.append('file', file);
       return request('/admin/upload-audio', { method: 'POST', body });
+    },
+    uploadVideo: async (file) => {
+      const body = new FormData();
+      body.append('file', file);
+      return request('/admin/upload-video', { method: 'POST', body });
     },
     health: () => request('/health'),
     grantAccess: (userId, data) =>

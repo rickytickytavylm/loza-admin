@@ -704,8 +704,14 @@
 
   function contentStatusMessage(code) {
     if (code === 'YANDEX_DISK_LINK') {
-      return 'Ссылка с Яндекс.Диска не подойдёт. Прикрепите файл или прямую ссылку на mp3.';
+      return 'Ссылка с Яндекс.Диска не подойдёт. Прикрепите файл или вставьте ссылку Кинескопа.';
     }
+    if (code === 'VIDEO_LINK_REQUIRED') return 'Для видео нужна ссылка Кинескопа или файл mp4.';
+    if (code === 'UNSUPPORTED_VIDEO_LINK') return 'Такая ссылка в клубе не откроется. Нужна ссылка kinescope.io или файл mp4.';
+    if (code === 'AUDIO_REQUIRED') return 'Прикрепите аудио или вставьте прямую ссылку на mp3.';
+    if (code === 'UNSUPPORTED_AUDIO_LINK') return 'Эта ссылка не откроется как аудио. Прикрепите файл.';
+    if (code === 'VIDEO_TOO_LARGE') return 'Видео больше 80 МБ. Для длинного фильма вставьте ссылку Кинескопа.';
+    if (code === 'UNSUPPORTED_VIDEO_TYPE') return 'Нужен файл mp4.';
     if (code === 'TITLE_REQUIRED') return 'Напишите название материала';
     if (code === 'SECTION_NOT_FOUND') return 'Нет такого раздела';
     if (code === 'VALIDATION_ERROR') return 'Слишком длинный текст или пустое название. Сократите или заполните поля.';
@@ -751,8 +757,9 @@
       return 'Ссылка';
     };
     const bucketAudio = /storage\.yandexcloud\.net/i.test(f.mediaUrl || '');
+    const bucketVideo = bucketAudio && /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(f.mediaUrl || '');
     const hasAudio = f.type === 'AUDIO' && (Boolean(f.mediaUrl) || editing);
-    const mediaField = f.type === 'AUDIO'
+    const mediaField = f.type === 'TEXT' ? '' : f.type === 'AUDIO'
       ? `<div class="image-attach">
           <input id="content-audio-file" accept="audio/mpeg,audio/mp4,audio/aac,audio/wav,audio/ogg,.mp3,.m4a,.aac,.wav,.ogg" type="file" hidden />
           <button type="button" class="image-attach-btn${hasAudio ? ' has-image' : ''}" id="content-pick-audio" ${state.uploading ? 'disabled' : ''}>
@@ -774,7 +781,16 @@
           <summary>Или вставить прямую ссылку на mp3</summary>
           <label class="url-label"><input id="content-media" placeholder="https://…" value="${esc(f.mediaUrl)}" /></label>
         </details>`
-      : `<label>Ссылка на видео<input id="content-media" value="${esc(f.mediaUrl)}" placeholder="https://kinescope.io/..." /></label>`;
+      : `<div class="image-attach">
+          <input id="content-video-file" accept="video/mp4,video/webm,video/quicktime,.mp4,.webm,.mov" type="file" hidden />
+          <button type="button" class="image-attach-btn${bucketVideo ? ' has-image' : ''}" id="content-pick-video" ${state.uploading ? 'disabled' : ''}>
+            <span class="image-attach-copy">
+              <strong>${state.uploading ? 'Загружаем в бакет…' : bucketVideo ? 'Видео в бакете' : 'Прикрепить mp4'}</strong>
+              <em>${bucketVideo ? 'Файл загружен' : 'До 80 МБ. Длинный фильм лучше ссылкой Кинескопа'}</em>
+            </span>
+          </button>
+        </div>
+        <label>Ссылка на видео<input id="content-media" value="${esc(f.mediaUrl)}" placeholder="https://kinescope.io/..." /></label>`;
     const chips = `
       <nav class="content-section-nav" aria-label="Разделы медиатеки">
         <button type="button" class="${filter === 'all' ? 'is-active' : ''}" data-content-filter="all">Все</button>
@@ -798,7 +814,7 @@
     return `<section class="admin-card tab-panel">
       <h2>${editing ? 'Редактировать материал' : 'Добавить в медиатеку'}</h2>
       ${chips}
-      <p class="muted">Киноклуб: kinescope.io. Аудио: прикрепите файл, он уйдёт в бакет. Яндекс.Диск не подойдёт.</p>
+      <p class="muted">Видео: ссылка kinescope.io или mp4 до 80 МБ. Аудио: прикрепите файл, он уйдёт в бакет. Ссылка с YouTube, VK или Яндекс.Диска в клубе не откроется.</p>
       ${editing && f.type === 'AUDIO' && !bucketAudio
         ? '<p class="muted">Звук уже в клубе. Можно поменять название или прикрепить другой файл.</p>'
         : ''}
@@ -975,6 +991,32 @@
             : code === 'UNSUPPORTED_AUDIO_TYPE'
               ? 'Нужен mp3 или m4a'
               : (code || 'Не удалось загрузить аудио');
+        } finally {
+          state.uploading = false;
+          render();
+        }
+      };
+    }
+    const videoInput = document.getElementById('content-video-file');
+    const videoPick = document.getElementById('content-pick-video');
+    if (videoPick && videoInput) {
+      videoPick.onclick = () => videoInput.click();
+      videoInput.onchange = async () => {
+        const file = videoInput.files?.[0];
+        if (!file) return;
+        snapshotContentForm();
+        state.uploading = true;
+        state.contentForm.audioFileName = file.name;
+        if (state.contentForm.type === 'TEXT') state.contentForm.type = 'VIDEO';
+        state.status.content = '';
+        render();
+        try {
+          const uploaded = await API.uploadVideo(file);
+          state.contentForm.mediaUrl = uploaded.url || '';
+          state.status.content = 'Видео в бакете. Можно публиковать.';
+        } catch (error) {
+          const code = error instanceof Error ? error.message : '';
+          state.status.content = contentStatusMessage(code);
         } finally {
           state.uploading = false;
           render();
