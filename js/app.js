@@ -234,8 +234,8 @@
           <span>${esc(API.API_URL)}<br />${ops.time ? `сверка ${fmtDateTime(ops.time)}` : 'ждём ответ summary'}</span>
         </article>
         <article class="ops-card">
-          <strong>${ops.prodamusReady ? 'Продамус готов' : ops.yookassaReady ? 'ЮKassa готова' : 'Оплата: ' + (ops.paymentProvider || 'mock')}</strong>
-          <span>${ops.prodamusReady || ops.yookassaReady ? 'Боевые платежи включены' : 'Касса ещё не подключена'}</span>
+          <strong>${ops.prodamusReady ? 'Продамус готов' : 'Продамус не подключен'}</strong>
+          <span>${ops.prodamusReady ? 'Оплата картой через Продамус' : 'Нужны домен и ключ Продамуса на Timeweb'}</span>
         </article>
         <article class="ops-card">
           <strong>AI ${ai.deepseek || ai.gemini ? 'подключён' : 'не настроен'}</strong>
