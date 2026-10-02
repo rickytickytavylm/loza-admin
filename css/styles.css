@@ -714,6 +714,7 @@ button:active { transform: translateY(0) scale(0.985); }
 }
 
 .admin-user-avatar {
+  position: relative;
   width: 37px;
   height: 37px;
   overflow: hidden;
@@ -729,6 +730,8 @@ button:active { transform: translateY(0) scale(0.985); }
 }
 
 .admin-user-avatar img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -736,16 +739,160 @@ button:active { transform: translateY(0) scale(0.985); }
 
 .admin-badge {
   display: inline-block;
-  margin-left: 5px;
-  padding: 3px 6px;
+  padding: 3px 7px;
   border-radius: 999px;
   color: #fff;
   background: var(--yandex);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 800;
-  line-height: 1;
+  line-height: 1.3;
   vertical-align: middle;
 }
+
+.admin-badge.is-gray { color: #6b6578; background: #ece7f1; }
+.admin-badge.is-soft { color: var(--plum-deep); background: var(--plum-soft); }
+.admin-badge.is-team { color: #fff; background: linear-gradient(135deg, #9c7ac7, var(--plum-deep)); }
+.admin-badge.is-wait { color: #815c00; background: #ffe9b0; }
+.admin-badge.is-danger { color: #fff; background: var(--danger); }
+
+.user-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.user-badges:empty { display: none; }
+
+.user-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 14px;
+  margin: 12px 0 0;
+  padding-top: 11px;
+  border-top: 1px solid rgba(89, 69, 104, 0.07);
+}
+
+.user-facts > div { min-width: 0; }
+
+.user-facts dt {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.user-facts dd {
+  margin: 2px 0 0;
+  color: var(--ink);
+  font-size: 12.5px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.user-manage-toggle {
+  margin-top: 12px;
+  padding: 9px 13px;
+  border-radius: 999px;
+  color: var(--plum-deep);
+  background: var(--plum-soft);
+  box-shadow: none;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.user-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.user-action-row + .user-action-row {
+  padding-top: 10px;
+  margin-top: 2px;
+  border-top: 1px dashed rgba(89, 69, 104, 0.12);
+}
+
+.user-card.is-blocked {
+  border-color: rgba(197, 61, 97, 0.35);
+  background: rgba(253, 232, 237, 0.5);
+}
+
+.user-more,
+.user-empty { margin-top: 6px; }
+.user-more { width: 100%; justify-content: center; text-align: center; }
+
+.cleanup-card { border: 1px solid rgba(197, 61, 97, 0.22); }
+.cleanup-card h2 { color: var(--danger); }
+
+.cleanup-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.cleanup-group { margin-top: 14px; }
+.cleanup-group h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.cleanup-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 9px 11px;
+  border: 1px solid rgba(89, 69, 104, 0.1);
+  border-radius: 13px;
+  background: #fff;
+}
+
+.cleanup-row + .cleanup-row { margin-top: 6px; }
+.cleanup-row.has-warning { border-color: rgba(197, 61, 97, 0.4); background: #fef2f5; }
+.cleanup-row input { margin-top: 3px; width: 17px; height: 17px; flex-shrink: 0; }
+
+.cleanup-row-copy { display: grid; gap: 2px; min-width: 0; }
+.cleanup-row-copy strong { font-size: 13px; }
+.cleanup-row-copy small { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.cleanup-row-copy em { color: var(--danger); font-size: 11px; font-weight: 700; font-style: normal; }
+
+.cleanup-stale { margin-top: 12px; }
+
+.login-new-block {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid rgba(197, 61, 97, 0.22);
+  border-radius: 16px;
+  background: #fef2f5;
+}
+
+.login-new-note { margin: 0; color: #7a4257; font-size: 12px; line-height: 1.5; font-weight: 600; }
+
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  margin-right: 8px;
+  border: 2px solid rgba(255, 255, 255, 0.5);
+  border-top-color: #fff;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: btn-spin 0.7s linear infinite;
+}
+
+.ghost-btn .btn-spinner,
+.user-manage-toggle .btn-spinner {
+  border-color: rgba(143, 122, 174, 0.35);
+  border-top-color: var(--plum-deep);
+}
+
+@keyframes btn-spin { to { transform: rotate(360deg); } }
 
 .pay-pill {
   display: inline-block;

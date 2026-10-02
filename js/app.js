@@ -16,7 +16,10 @@
     chatRooms: [],
     selectedRoomId: '',
     userQuery: '',
-    userFilter: 'all',
+    userFilter: 'members',
+    userSort: 'recent',
+    userLimit: 40,
+    cleanup: { loading: false, busy: false, data: null, picked: [], cancelStale: true },
     paymentQuery: '',
     library: [],
     librarySections: [],
@@ -39,7 +42,7 @@
     ],
     uploading: false,
     live: { ok: null, checkedAt: '' },
-    status: { post: '', chat: '', user: '', movie: '', announce: '', content: '', error: '' },
+    status: { post: '', chat: '', user: '', movie: '', announce: '', content: '', error: '', password: '' },
   };
 
   function esc(value) {
@@ -146,23 +149,55 @@
         <div class="admin-form">
           <label>Email<input id="login-email" placeholder="email команды" autocomplete="username" /></label>
           <label>Пароль<input id="login-password" type="password" autocomplete="current-password" /></label>
+          <div class="login-new-block" id="login-new-block" hidden>
+            <p class="login-new-note">Этот пароль записан в коде проекта, поэтому вход по нему закрыт. Придумайте новый, не короче 10 символов. Старый перестанет работать.</p>
+            <label>Новый пароль<input id="login-new" type="password" autocomplete="new-password" /></label>
+            <label>Повторите новый пароль<input id="login-new2" type="password" autocomplete="new-password" /></label>
+          </div>
           <p class="error" id="login-error" hidden></p>
-          <button type="submit">Войти</button>
+          <button type="submit" id="login-submit">Войти</button>
         </div>
       </form>
     </div>`;
 
+    const loginErrors = {
+      TOO_MANY_ATTEMPTS: 'Слишком много попыток. Подождите 15 минут и попробуйте снова.',
+      WEAK_PASSWORD: 'Новый пароль слишком простой: нужно не меньше 10 символов.',
+      USER_BLOCKED: 'Этот аккаунт заблокирован.',
+    };
+
     document.getElementById('login-form').onsubmit = async (event) => {
       event.preventDefault();
       const error = document.getElementById('login-error');
+      const newBlock = document.getElementById('login-new-block');
+      const submit = document.getElementById('login-submit');
       error.hidden = true;
+      let newPassword = '';
+      if (!newBlock.hidden) {
+        newPassword = document.getElementById('login-new').value;
+        if (newPassword.length < 10) {
+          error.hidden = false;
+          error.textContent = loginErrors.WEAK_PASSWORD;
+          return;
+        }
+        if (newPassword !== document.getElementById('login-new2').value) {
+          error.hidden = false;
+          error.textContent = 'Новые пароли не совпадают.';
+          return;
+        }
+      }
+      submit.disabled = true;
+      submit.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span>Входим…';
       try {
         const payload = await API.login(
           document.getElementById('login-email').value.trim(),
           document.getElementById('login-password').value,
+          newPassword,
         );
         if (payload.user?.role === 'CURATOR') {
           API.clearToken();
+          submit.disabled = false;
+          submit.textContent = 'Войти';
           error.hidden = false;
           error.textContent = 'Админка только для админов. Анонсы публикуйте в приложении, в чате «Анонсы».';
           return;
@@ -174,9 +209,18 @@
         state.user = payload.user;
         await loadDashboard();
         render();
-      } catch {
+      } catch (loginError) {
+        const code = loginError instanceof Error ? loginError.message : '';
+        submit.disabled = false;
+        submit.textContent = newBlock.hidden ? 'Войти' : 'Сменить пароль и войти';
+        if (code === 'PASSWORD_CHANGE_REQUIRED') {
+          newBlock.hidden = false;
+          submit.textContent = 'Сменить пароль и войти';
+          document.getElementById('login-new').focus();
+          return;
+        }
         error.hidden = false;
-        error.textContent = 'Неверный логин или нет прав администратора';
+        error.textContent = loginErrors[code] || 'Неверный логин или нет прав администратора';
       }
     };
   }
@@ -203,15 +247,15 @@
     const s = state.summary || {};
     const cards = {
       overview: [
-        [s.users, 'Пользователи'],
+        [s.users, 'Участники'],
         [s.paidUsers, 'С доступом'],
         [s.newUsersWeek, 'Новые за неделю'],
         [s.messagesWeek, 'Сообщений за неделю'],
       ],
       announce: [[s.rooms, 'Чаты'], [s.paidUsers, 'С доступом']],
-      posts: [[s.posts, 'Посты'], [s.users, 'Пользователи']],
-      users: [[s.users, 'Пользователи'], [s.paidUsers, 'С оплатой']],
-      payments: [[s.paidUsers, 'С оплатой'], [s.pendingPayments, 'Ждут оплату']],
+      posts: [[s.posts, 'Посты'], [s.users, 'Участники']],
+      users: [[s.users, 'Участники'], [s.paidUsers, 'С доступом'], [s.waitingClub, 'Ждут открытия клуба']],
+      payments: [[s.paidUsers, 'С доступом'], [s.pendingPayments, 'Начали оплату за 2 дня']],
       chats: [[s.rooms, 'Чаты'], [s.messagesWeek, 'Сообщений / 7дн']],
       content: [[s.content, 'Материалы'], [s.movies, 'Киноклуб']],
     }[state.tab] || [[s.users, 'Пользователи'], [s.paidUsers, 'С доступом']];
@@ -256,84 +300,320 @@
             <span>${plan.priceRub} ₽ / ${plan.planDays} дн. · ${esc(plan.code)}</span>
           </article>`).join('') || '<p class="muted">Тарифы подтянутся после обновления backend</p>'}
       </div>
+    </section>
+    <section class="admin-card tab-panel">
+      <h2>Пароль для входа в админку</h2>
+      <p class="muted">Меняется только у вас. Не короче 10 символов. После смены войдите заново на других устройствах.</p>
+      <form class="admin-form" id="password-form">
+        <label>Текущий пароль<input id="pwd-current" type="password" autocomplete="current-password" required /></label>
+        <div class="admin-form-row">
+          <label>Новый пароль<input id="pwd-new" type="password" autocomplete="new-password" required /></label>
+          <label>Ещё раз<input id="pwd-new2" type="password" autocomplete="new-password" required /></label>
+        </div>
+        ${state.status.password ? `<p class="status">${esc(state.status.password)}</p>` : ''}
+        <button type="submit" id="pwd-submit">Сменить пароль</button>
+      </form>
     </section>`;
+  }
+
+  function bindOverview() {
+    const form = document.getElementById('password-form');
+    if (!form) return;
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      const current = document.getElementById('pwd-current').value;
+      const next = document.getElementById('pwd-new').value;
+      if (next.length < 10) {
+        state.status.password = 'Новый пароль слишком короткий: нужно не меньше 10 символов.';
+        render();
+        return;
+      }
+      if (next !== document.getElementById('pwd-new2').value) {
+        state.status.password = 'Новые пароли не совпадают.';
+        render();
+        return;
+      }
+      const submit = document.getElementById('pwd-submit');
+      submit.disabled = true;
+      submit.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span>Сохраняем…';
+      try {
+        await API.changePassword(current, next);
+        state.status.password = 'Пароль изменён.';
+      } catch (error) {
+        const code = error instanceof Error ? error.message : '';
+        state.status.password = {
+          INVALID_CREDENTIALS: 'Текущий пароль неверный.',
+          TOO_MANY_ATTEMPTS: 'Слишком много попыток. Подождите 15 минут.',
+          WEAK_PASSWORD: 'Этот пароль нельзя использовать, придумайте другой.',
+        }[code] || 'Не удалось сменить пароль.';
+      }
+      render();
+    };
+  }
+
+  const PLAN_SHORT = {
+    library_30: 'Медиатека',
+    club_30: 'Клуб 30 дней',
+    club_90: 'Клуб 90 дней',
+    club_plus_30: 'Клуб Плюс',
+  };
+  const JUNK_KINDS = ['guest', 'test', 'nologin', 'password'];
+  const JUNK_TITLES = {
+    guest: 'Гости из тестового режима чата',
+    test: 'Тестовый вход без Яндекса',
+    nologin: 'Ни разу не входили в приложение',
+    password: 'Вход по паролю, но не команда',
+  };
+  const USER_FILTERS = [
+    ['members', 'Участники'],
+    ['access', 'С доступом'],
+    ['noaccess', 'Без доступа'],
+    ['waiting', 'Ждут открытия клуба'],
+    ['team', 'Команда'],
+    ['blocked', 'Заблокированы'],
+    ['junk', 'Тестовые и лишние'],
+  ];
+  const SPINNER = '<span class="btn-spinner" aria-hidden="true"></span>';
+
+  function planShort(item) {
+    return PLAN_SHORT[item?.planCode] || item?.planName || 'Доступ';
+  }
+
+  function isJunk(entry) {
+    return JUNK_KINDS.includes(entry.kind);
+  }
+
+  function activeSubsOf(entry) {
+    const now = Date.now();
+    return (entry.subscriptions || []).filter((item) => (
+      item.active && item.accessUntil && new Date(item.accessUntil).getTime() > now
+    ));
+  }
+
+  function isWaitingClub(entry) {
+    return Boolean(entry.remindClubOpen) && !activeSubsOf(entry).some((item) => String(item.planCode || '').startsWith('club'));
+  }
+
+  function plural(n, one, few, many) {
+    const mod10 = n % 10;
+    const mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return one;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+    return many;
+  }
+
+  function rub(value) {
+    return `${Number(value || 0).toLocaleString('ru-RU')} ₽`;
+  }
+
+  function fmtSeen(value) {
+    if (!value) return 'ещё не заходил(а)';
+    const minutes = Math.round((Date.now() - new Date(value).getTime()) / 60000);
+    if (minutes < 15) return 'только что';
+    if (minutes < 60) return `${minutes} мин назад`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours} ч назад`;
+    const days = Math.round(hours / 24);
+    if (days < 7) return `${days} ${plural(days, 'день', 'дня', 'дней')} назад`;
+    return fmtDate(value);
+  }
+
+  function accessSummary(entry) {
+    const active = activeSubsOf(entry);
+    if (active.length) {
+      return {
+        cls: 'is-active',
+        pill: `Доступ до ${fmtDate(active[0].accessUntil)}`,
+        text: active.map((item) => `${planShort(item)} до ${fmtDate(item.accessUntil)}${item.source === 'MANUAL' ? ' (выдан вручную)' : ''}`).join(' · '),
+      };
+    }
+    const last = (entry.subscriptions || [])[0];
+    if (last) {
+      return { cls: 'is-expired', pill: 'Доступ закончился', text: `${planShort(last)}, закончился ${fmtDate(last.accessUntil)}` };
+    }
+    return { cls: 'is-none', pill: 'Без доступа', text: 'Только бесплатная часть' };
+  }
+
+  function paySummary(entry) {
+    if (entry.paidTotalRub) {
+      return `${rub(entry.paidTotalRub)} · ${entry.paidCount} ${plural(entry.paidCount, 'оплата', 'оплаты', 'оплат')}`;
+    }
+    if (entry.lastAttempt?.status === 'PENDING') return `Начал(а) оплату ${fmtDate(entry.lastAttempt.createdAt)}, не завершил(а)`;
+    if (entry.lastAttempt?.status === 'FAILED') return `Оплата не прошла ${fmtDate(entry.lastAttempt.createdAt)}`;
+    return 'Не платил(а)';
+  }
+
+  function loginBadge(entry) {
+    if (entry.hasYandex) return '<span class="admin-badge">Яндекс</span>';
+    if (entry.kind === 'team' && entry.hasPassword) return '<span class="admin-badge is-soft">Пароль</span>';
+    if (entry.kind === 'guest') return '<span class="admin-badge is-gray">Гость чата</span>';
+    if (entry.kind === 'test') return '<span class="admin-badge is-gray">Тестовый вход</span>';
+    if (entry.kind === 'password') return '<span class="admin-badge is-gray">Пароль</span>';
+    return '<span class="admin-badge is-gray">Не входил</span>';
+  }
+
+  function matchesUserFilter(entry, filter) {
+    const junk = isJunk(entry);
+    if (filter === 'junk') return junk;
+    if (filter === 'team') return entry.kind === 'team';
+    if (filter === 'blocked') return Boolean(entry.blockedAt);
+    if (junk) return false;
+    if (filter === 'access') return entry.payStatus === 'active';
+    if (filter === 'noaccess') return entry.payStatus !== 'active';
+    if (filter === 'waiting') return isWaitingClub(entry);
+    return true;
   }
 
   function filteredUsers() {
     const q = state.userQuery.trim().toLowerCase();
-    return state.users.filter((entry) => {
-      if (state.userFilter === 'paid' && entry.payStatus !== 'active') return false;
-      if (state.userFilter === 'none' && entry.payStatus === 'active') return false;
-      if (state.userFilter === 'blocked' && !entry.blockedAt) return false;
-      if (state.userFilter === 'team' && !['OWNER', 'ADMIN', 'CURATOR'].includes(entry.role)) return false;
+    const list = state.users.filter((entry) => {
+      if (!matchesUserFilter(entry, state.userFilter)) return false;
       if (!q) return true;
       return `${entry.name} ${entry.email} ${entry.phone || ''}`.toLowerCase().includes(q);
     });
+    if (state.userSort === 'seen') {
+      list.sort((a, b) => new Date(b.lastSeenAt || 0) - new Date(a.lastSeenAt || 0));
+    } else if (state.userSort === 'name') {
+      list.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), 'ru'));
+    }
+    return list;
+  }
+
+  function renderUserCard(entry) {
+    const avatar = entry.avatarUrl || '';
+    const access = accessSummary(entry);
+    const me = state.user?.id === entry.id;
+    const canDelete = !me && entry.kind !== 'team';
+    const roles = roleChoices(entry);
+    const team = entry.kind === 'team' ? `<span class="admin-badge is-team">${esc(roleLabel(entry.role))}</span>` : '';
+    const waiting = isWaitingClub(entry) ? '<span class="admin-badge is-wait">Ждёт открытия клуба</span>' : '';
+    const blocked = entry.blockedAt ? '<span class="admin-badge is-danger">Заблокирован</span>' : '';
+    return `<article class="user-card${entry.blockedAt ? ' is-blocked' : ''}" data-user-card="${esc(entry.id)}">
+      <div class="user-card-head">
+        <div class="admin-user-avatar">${avatar ? `<img src="${esc(avatar)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}<span>${esc((entry.name || '?').trim()[0]?.toUpperCase() || '?')}</span></div>
+        <div class="user-card-meta">
+          <strong>${esc(entry.name || 'Без имени')}${me ? ' <small>(вы)</small>' : ''}</strong>
+          <span>${esc(entry.email)}</span>
+          <span>${entry.phone ? esc(entry.phone) : 'Телефона нет'}</span>
+        </div>
+        <span class="pay-pill ${access.cls}">${esc(access.pill)}</span>
+      </div>
+      <div class="user-badges">${loginBadge(entry)}${team}${waiting}${blocked}</div>
+      <dl class="user-facts">
+        <div><dt>Доступ</dt><dd>${esc(access.text)}</dd></div>
+        <div><dt>Оплаты</dt><dd>${esc(paySummary(entry))}</dd></div>
+        <div><dt>В клубе с</dt><dd>${fmtDate(entry.createdAt)}</dd></div>
+        <div><dt>Заходил(а)</dt><dd>${esc(fmtSeen(entry.lastSeenAt))}</dd></div>
+        <div><dt>Сообщений в чатах</dt><dd>${entry.messagesCount || 0}</dd></div>
+      </dl>
+      <button type="button" class="user-manage-toggle" data-manage="${esc(entry.id)}" aria-expanded="false">Управление</button>
+      <div class="user-actions" data-manage-panel="${esc(entry.id)}" hidden>
+        <div class="user-action-row">
+          <select data-grant-plan="${esc(entry.id)}" aria-label="Что выдать">
+            <option value="club_30">Клуб · 30 дней</option>
+            <option value="club_90">Клуб · 90 дней</option>
+            <option value="club_plus_30">Клуб Плюс · 30 дней</option>
+            <option value="library_30">Медиатека · 30 дней</option>
+          </select>
+          <button type="button" class="ok-btn" data-grant="${esc(entry.id)}">Выдать доступ</button>
+          <button type="button" class="ghost-btn" data-revoke="${esc(entry.id)}">Забрать этот доступ</button>
+        </div>
+        ${roles.length ? `<div class="user-action-row">
+          <select data-role-select="${esc(entry.id)}" aria-label="Роль">
+            ${roles.map((role) => `<option value="${role}" ${entry.role === role ? 'selected' : ''}>${esc(roleLabel(role))}</option>`).join('')}
+          </select>
+          <button type="button" class="ok-btn" data-role="${esc(entry.id)}">Назначить роль</button>
+        </div>` : ''}
+        ${me ? '' : `<div class="user-action-row">
+          <button type="button" class="${entry.blockedAt ? 'ok-btn' : 'ghost-btn'}" data-block="${esc(entry.id)}" data-blocked="${entry.blockedAt ? '1' : '0'}">${entry.blockedAt ? 'Разблокировать' : 'Заблокировать вход'}</button>
+          ${canDelete ? `<button type="button" class="danger-btn" data-delete-user="${esc(entry.id)}">Удалить аккаунт</button>` : ''}
+        </div>`}
+      </div>
+    </article>`;
+  }
+
+  function renderUserList() {
+    const list = filteredUsers();
+    if (!list.length) {
+      return `<p class="muted user-empty">${state.userQuery.trim() ? 'По этому запросу никого нет.' : 'В этом списке пока никого нет.'}</p>`;
+    }
+    const shown = list.slice(0, state.userLimit);
+    const rest = list.length - shown.length;
+    return `${shown.map(renderUserCard).join('')}
+      ${rest > 0 ? `<button type="button" class="ghost-btn user-more" id="user-more">Показать ещё ${Math.min(rest, 40)} из ${rest}</button>` : ''}`;
+  }
+
+  function renderCleanup() {
+    const c = state.cleanup;
+    const junkCount = state.users.filter(isJunk).length;
+    if (!c.data) {
+      if (!junkCount) return '';
+      return `<section class="admin-card tab-panel cleanup-card">
+        <h2>Тестовые и лишние аккаунты: ${junkCount}</h2>
+        <p class="muted">Это гости из тестового режима чата, тестовый вход и записи, у которых нет способа войти. Из-за них список казался огромным. Команду и тех, кто входил через Яндекс, очистка не трогает. Сначала покажем список, удалите только отмеченных.</p>
+        <button type="button" class="ok-btn" id="cleanup-load" ${c.loading ? 'disabled' : ''}>${c.loading ? `${SPINNER}Собираем список…` : 'Показать, кого удалить'}</button>
+      </section>`;
+    }
+    const groups = JUNK_KINDS.map((kind) => {
+      const rows = c.data.users.filter((item) => item.kind === kind);
+      if (!rows.length) return '';
+      return `<div class="cleanup-group">
+        <h3>${esc(JUNK_TITLES[kind])} · ${rows.length}</h3>
+        ${rows.map((item) => `<label class="cleanup-row${item.warnings.length ? ' has-warning' : ''}">
+          <input type="checkbox" data-cleanup-pick="${esc(item.id)}" ${c.picked.includes(item.id) ? 'checked' : ''} />
+          <span class="cleanup-row-copy">
+            <strong>${esc(item.name || 'Без имени')}</strong>
+            <small>${esc(item.email)} · создан ${fmtDate(item.createdAt)}${item.messagesCount ? ` · сообщений: ${item.messagesCount}` : ''}</small>
+            ${item.warnings.length ? `<em>Проверьте: ${esc(item.warnings.join(', '))}</em>` : ''}
+          </span>
+        </label>`).join('')}
+      </div>`;
+    }).join('');
+    return `<section class="admin-card tab-panel cleanup-card">
+      <h2>Очистка перед запуском</h2>
+      <p class="muted">Отмечены все, у кого нет оплат и доступа. Записи с оплатой или открытым доступом не отмечены, решите сами. Вместе с аккаунтом пропадут его сообщения в чатах. Настоящие оплаты останутся в истории.</p>
+      ${c.data.users.length ? `<div class="cleanup-tools">
+        <button type="button" class="ghost-btn" id="cleanup-all">Отметить всех</button>
+        <button type="button" class="ghost-btn" id="cleanup-none">Снять все</button>
+      </div>${groups}` : '<p class="status">Лишних аккаунтов не осталось.</p>'}
+      ${c.data.stalePayments ? `<label class="admin-checkbox cleanup-stale">
+        <input type="checkbox" id="cleanup-stale" ${c.cancelStale ? 'checked' : ''} />
+        Закрыть зависшие попытки оплаты старше 2 дней: ${c.data.stalePayments}
+      </label>` : ''}
+      <div class="cleanup-tools">
+        <button type="button" class="danger-btn" id="cleanup-apply" ${c.busy ? 'disabled' : ''}>${c.busy ? `${SPINNER}Удаляем…` : cleanupApplyLabel()}</button>
+        <button type="button" class="ghost-btn" id="cleanup-close">Скрыть</button>
+      </div>
+    </section>`;
+  }
+
+  function cleanupApplyLabel() {
+    const c = state.cleanup;
+    const n = c.picked.length;
+    const stale = c.cancelStale && c.data?.stalePayments ? ' и закрыть попытки оплаты' : '';
+    if (!n) return stale ? 'Закрыть зависшие попытки оплаты' : 'Ничего не отмечено';
+    return `Удалить ${n} ${plural(n, 'аккаунт', 'аккаунта', 'аккаунтов')}${stale}`;
   }
 
   function renderUsers() {
-    const cards = filteredUsers().map((entry) => {
-      const avatar = entry.avatarUrl || '';
-      const pay = payLabel(entry.payStatus);
-      const now = Date.now();
-      const activeSubs = (entry.subscriptions || (entry.subscription ? [entry.subscription] : []))
-        .filter((item) => item.active && item.accessUntil && new Date(item.accessUntil).getTime() > now);
-      const payDetail = activeSubs.length
-        ? activeSubs.map((item) => `${item.planName || 'Подписка'} · до ${fmtDate(item.accessUntil)}`).join(' · ')
-        : (entry.payStatus === 'pending'
-          ? 'Начала оплату, ещё не оплатила'
-          : 'Без оплаты');
-      return `<article class="user-card">
-        <div class="user-card-head">
-          <div class="admin-user-avatar">${avatar ? `<img src="${esc(avatar)}" alt="" />` : esc((entry.name || '?')[0].toUpperCase())}</div>
-          <div class="user-card-meta">
-            <strong>${esc(entry.name)}${entry.hasYandex ? '<span class="admin-badge">Яндекс</span>' : ''}${entry.blockedAt ? '<span class="admin-badge" style="background:#c53d61">блок</span>' : ''}</strong>
-            <span>${esc(entry.email)}</span>
-            <span>${entry.phone ? esc(entry.phone) : 'Нет номера'}</span>
-          </div>
-          <span class="pay-pill ${pay.cls}">${pay.text}</span>
-        </div>
-        <div class="user-card-foot">
-          <span>${esc(roleLabel(entry.role))}</span>
-          <span>${esc(payDetail)}</span>
-          <span>${fmtDate(entry.createdAt)}</span>
-        </div>
-        <div class="user-actions">
-          <select data-grant-plan="${esc(entry.id)}">
-            <option value="library_30">Медиатека. Теория</option>
-            <option value="club_30">Клуб 30 дней</option>
-            <option value="club_90">Клуб 90 дней</option>
-            <option value="club_plus_30">Клуб Плюс</option>
-          </select>
-          <button type="button" class="ok-btn" data-grant="${esc(entry.id)}">Выдать доступ</button>
-          <button type="button" class="ghost-btn" data-revoke="${esc(entry.id)}">Забрать доступ</button>
-          ${roleChoices(entry).length ? `
-          <select data-role-select="${esc(entry.id)}">
-            ${roleChoices(entry).map((role) => `<option value="${role}" ${entry.role === role ? 'selected' : ''}>${esc(roleLabel(role))}</option>`).join('')}
-          </select>
-          <button type="button" class="ok-btn" data-role="${esc(entry.id)}">Назначить роль</button>` : ''}
-          <button type="button" class="${entry.blockedAt ? 'ok-btn' : 'danger-btn'}" data-block="${esc(entry.id)}" data-blocked="${entry.blockedAt ? '1' : '0'}">
-            ${entry.blockedAt ? 'Разблокировать' : 'Заблокировать'}
-          </button>
-        </div>
-      </article>`;
-    }).join('');
-
-    return `<section class="admin-card tab-panel">
+    const counts = Object.fromEntries(USER_FILTERS.map(([id]) => [id, state.users.filter((entry) => matchesUserFilter(entry, id)).length]));
+    return `${renderCleanup()}
+    <section class="admin-card tab-panel">
       <h2>Участники</h2>
-      <p class="muted">Ниже весь список. Счётчик «С доступом» — у кого сейчас открыт продукт. Срок берётся из выбранного пункта: Медиатека, Клуб 30 дней и Клуб Плюс — 30 дней, Клуб 90 дней — 90 дней. Дата окончания видна на карточке. После неё приложение само закрывает доступ, само продление не включается. Из клуба в Telegram человек сам не удаляется. Чтобы забрать доступ раньше, выберите продукт и нажмите «Забрать доступ». «Заблокировать» полностью закрывает вход в приложение. Если выдать доступ заблокированному, блок снимается.</p>
+      <p class="muted">Карточка показывает, как человек входит, какой у него доступ и до какого числа, сколько он заплатил и когда заходил. Оплата через Продамус продлевается сама, пока человек не отключит подписку. Доступ, выданный здесь вручную, сам не продлевается. «Заблокировать вход» закрывает приложение целиком. Из Telegram-клуба человек сам не удаляется.</p>
       <div class="toolbar">
-        <input id="user-query" value="${esc(state.userQuery)}" placeholder="Имя, почта или телефон" />
-        <select id="user-filter">
-          <option value="all" ${state.userFilter === 'all' ? 'selected' : ''}>Все</option>
-          <option value="paid" ${state.userFilter === 'paid' ? 'selected' : ''}>С доступом</option>
-          <option value="none" ${state.userFilter === 'none' ? 'selected' : ''}>Без оплаты</option>
-          <option value="blocked" ${state.userFilter === 'blocked' ? 'selected' : ''}>Заблокированы</option>
-          <option value="team" ${state.userFilter === 'team' ? 'selected' : ''}>Команда</option>
+        <input id="user-query" type="search" value="${esc(state.userQuery)}" placeholder="Имя, почта или телефон" autocomplete="off" />
+        <select id="user-filter" aria-label="Кого показать">
+          ${USER_FILTERS.map(([id, label]) => (id === 'junk' && !counts.junk ? '' : `<option value="${id}" ${state.userFilter === id ? 'selected' : ''}>${label} · ${counts[id]}</option>`)).join('')}
+        </select>
+        <select id="user-sort" aria-label="Порядок">
+          <option value="recent" ${state.userSort === 'recent' ? 'selected' : ''}>Сначала новые</option>
+          <option value="seen" ${state.userSort === 'seen' ? 'selected' : ''}>Недавно заходили</option>
+          <option value="name" ${state.userSort === 'name' ? 'selected' : ''}>По имени</option>
         </select>
       </div>
       ${state.status.user ? `<p class="status">${esc(state.status.user)}</p>` : ''}
-      <div class="user-card-list">${cards || '<p class="muted">Никого не нашли</p>'}</div>
+      <div class="user-card-list" id="user-card-list">${renderUserList()}</div>
     </section>`;
   }
 
@@ -914,6 +1194,7 @@
       };
     });
 
+    if (state.tab === 'overview') bindOverview();
     if (state.tab === 'posts') bindPosts();
     if (state.tab === 'chats') bindChats();
     if (state.tab === 'users') bindUsers();
@@ -1126,83 +1407,215 @@
     });
   }
 
+  function refreshUserTab() {
+    const panel = document.querySelector('.tab-content');
+    if (!panel) { render(); return; }
+    const stats = document.querySelector('.admin-stats');
+    if (stats) stats.outerHTML = renderStats();
+    panel.innerHTML = renderTabContent();
+    bindUsers();
+  }
+
+  async function afterUserChange(message) {
+    state.status.user = message;
+    try {
+      [state.summary] = await Promise.all([API.summary(), reloadUsers()]);
+    } catch { /* keep what we have */ }
+    refreshUserTab();
+  }
+
+  function runUserAction(btn, working, run) {
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.innerHTML = `${SPINNER}${working}`;
+    run().catch((error) => {
+      state.status.user = error instanceof Error ? mapUserError(error.message) : 'Не удалось обновить';
+      btn.disabled = false;
+      btn.textContent = label;
+      refreshUserTab();
+    });
+  }
+
+  function mapUserError(code) {
+    return {
+      TEAM_MEMBER: 'Команду удалять нельзя.',
+      CANNOT_MODIFY_SELF: 'Себя менять нельзя.',
+      USER_NOT_FOUND: 'Аккаунт уже удалён.',
+    }[code] || code || 'Не удалось обновить';
+  }
+
   function bindUsers() {
     const query = document.getElementById('user-query');
     const filter = document.getElementById('user-filter');
-    query?.addEventListener('input', (event) => { state.userQuery = event.target.value; });
-    query?.addEventListener('keydown', (event) => {
-      if (event.key === 'Enter') { event.preventDefault(); render(); }
+    const sort = document.getElementById('user-sort');
+    const listEl = document.getElementById('user-card-list');
+    const rerenderList = () => {
+      state.userLimit = 40;
+      if (listEl) listEl.innerHTML = renderUserList();
+      bindUserCards();
+    };
+    let typingTimer = 0;
+    query?.addEventListener('input', (event) => {
+      state.userQuery = event.target.value;
+      window.clearTimeout(typingTimer);
+      typingTimer = window.setTimeout(rerenderList, 180);
     });
-    query?.addEventListener('blur', () => render());
     filter?.addEventListener('change', (event) => {
       state.userFilter = event.target.value;
-      render();
+      rerenderList();
+    });
+    sort?.addEventListener('change', (event) => {
+      state.userSort = event.target.value;
+      rerenderList();
+    });
+    bindUserCards();
+    bindCleanup();
+  }
+
+  function bindUserCards() {
+    document.getElementById('user-more')?.addEventListener('click', () => {
+      state.userLimit += 40;
+      const listEl = document.getElementById('user-card-list');
+      if (listEl) listEl.innerHTML = renderUserList();
+      bindUserCards();
+    });
+
+    app.querySelectorAll('[data-manage]').forEach((btn) => {
+      btn.onclick = () => {
+        const panel = app.querySelector(`[data-manage-panel="${btn.dataset.manage}"]`);
+        if (!panel) return;
+        const open = panel.hidden;
+        panel.hidden = !open;
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        btn.textContent = open ? 'Скрыть управление' : 'Управление';
+      };
     });
 
     app.querySelectorAll('[data-grant]').forEach((btn) => {
-      btn.onclick = async () => {
+      btn.onclick = () => {
         const select = app.querySelector(`[data-grant-plan="${btn.dataset.grant}"]`);
-        try {
-          await API.grantAccess(btn.dataset.grant, { planCode: select?.value || 'library_30' });
-          state.status.user = 'Доступ выдан. Если человек был в блоке, вход снова открыт.';
-          await reloadUsers();
-          state.summary = await API.summary();
-          render();
-        } catch (error) {
-          state.status.user = error instanceof Error ? error.message : 'Не удалось выдать доступ — нужен деплой backend';
-          render();
-        }
+        const plan = select?.value || 'club_30';
+        runUserAction(btn, 'Выдаём…', async () => {
+          await API.grantAccess(btn.dataset.grant, { planCode: plan });
+          await afterUserChange('Доступ выдан. Если был блок, вход снова открыт.');
+        });
       };
     });
 
     app.querySelectorAll('[data-revoke]').forEach((btn) => {
-      btn.onclick = async () => {
+      btn.onclick = () => {
         const select = app.querySelector(`[data-grant-plan="${btn.dataset.revoke}"]`);
-        if (!window.confirm('Забрать доступ к выбранному продукту?')) return;
-        try {
-          await API.revokeAccess(btn.dataset.revoke, { planCode: select?.value || 'library_30' });
-          state.status.user = 'Доступ забран';
-          await reloadUsers();
-          state.summary = await API.summary();
-          render();
-        } catch (error) {
-          state.status.user = error instanceof Error ? error.message : 'Не удалось забрать доступ';
-          render();
-        }
+        const plan = select?.value || 'club_30';
+        if (!window.confirm(`Забрать доступ «${PLAN_SHORT[plan] || plan}»?`)) return;
+        runUserAction(btn, 'Забираем…', async () => {
+          await API.revokeAccess(btn.dataset.revoke, { planCode: plan });
+          await afterUserChange('Доступ забран.');
+        });
       };
     });
 
     app.querySelectorAll('[data-role]').forEach((btn) => {
-      btn.onclick = async () => {
+      btn.onclick = () => {
         const select = app.querySelector(`[data-role-select="${btn.dataset.role}"]`);
         const role = select?.value;
         if (!role) return;
-        try {
+        runUserAction(btn, 'Меняем…', async () => {
           await API.updateUser(btn.dataset.role, { role });
-          state.status.user = `Роль обновлена: ${roleLabel(role)}`;
-          await reloadUsers();
-          render();
-        } catch (error) {
-          state.status.user = error instanceof Error ? error.message : 'Не удалось сменить роль — нужен деплой backend';
-          render();
-        }
+          await afterUserChange(`Роль обновлена: ${roleLabel(role)}.`);
+        });
       };
     });
 
     app.querySelectorAll('[data-block]').forEach((btn) => {
-      btn.onclick = async () => {
+      btn.onclick = () => {
         const blocked = btn.dataset.blocked !== '1';
-        if (blocked && !window.confirm('Заблокировать участника?')) return;
-        try {
+        if (blocked && !window.confirm('Закрыть этому человеку вход в приложение?')) return;
+        runUserAction(btn, blocked ? 'Блокируем…' : 'Снимаем блок…', async () => {
           await API.updateUser(btn.dataset.block, { blocked });
-          state.status.user = blocked ? 'Участник заблокирован' : 'Блок снят';
-          await reloadUsers();
-          render();
-        } catch (error) {
-          state.status.user = error instanceof Error ? error.message : 'Не удалось обновить';
-          render();
-        }
+          await afterUserChange(blocked ? 'Вход закрыт.' : 'Блок снят.');
+        });
       };
+    });
+
+    app.querySelectorAll('[data-delete-user]').forEach((btn) => {
+      btn.onclick = () => {
+        const card = app.querySelector(`[data-user-card="${btn.dataset.deleteUser}"]`);
+        const name = card?.querySelector('.user-card-meta strong')?.textContent || 'этот аккаунт';
+        if (!window.confirm(`Удалить ${name}? Его сообщения в чатах тоже пропадут. Оплаты останутся в истории. Отменить нельзя.`)) return;
+        runUserAction(btn, 'Удаляем…', async () => {
+          await API.deleteUser(btn.dataset.deleteUser);
+          await afterUserChange('Аккаунт удалён.');
+        });
+      };
+    });
+  }
+
+  async function bindCleanup() {
+    document.getElementById('cleanup-load')?.addEventListener('click', async () => {
+      state.cleanup.loading = true;
+      refreshUserTab();
+      try {
+        state.cleanup.data = await API.cleanupPreview();
+        state.cleanup.picked = state.cleanup.data.users.filter((item) => item.suggested).map((item) => item.id);
+      } catch (error) {
+        state.status.user = error instanceof Error ? error.message : 'Не удалось собрать список';
+      } finally {
+        state.cleanup.loading = false;
+        refreshUserTab();
+      }
+    });
+
+    app.querySelectorAll('[data-cleanup-pick]').forEach((box) => {
+      box.onchange = () => {
+        const id = box.dataset.cleanupPick;
+        const picked = new Set(state.cleanup.picked);
+        if (box.checked) picked.add(id); else picked.delete(id);
+        state.cleanup.picked = [...picked];
+        const apply = document.getElementById('cleanup-apply');
+        if (apply && !state.cleanup.busy) apply.textContent = cleanupApplyLabel();
+      };
+    });
+    document.getElementById('cleanup-all')?.addEventListener('click', () => {
+      state.cleanup.picked = state.cleanup.data.users.map((item) => item.id);
+      refreshUserTab();
+    });
+    document.getElementById('cleanup-none')?.addEventListener('click', () => {
+      state.cleanup.picked = [];
+      refreshUserTab();
+    });
+    document.getElementById('cleanup-stale')?.addEventListener('change', (event) => {
+      state.cleanup.cancelStale = event.target.checked;
+      const apply = document.getElementById('cleanup-apply');
+      if (apply && !state.cleanup.busy) apply.textContent = cleanupApplyLabel();
+    });
+    document.getElementById('cleanup-close')?.addEventListener('click', () => {
+      state.cleanup.data = null;
+      state.cleanup.picked = [];
+      refreshUserTab();
+    });
+    document.getElementById('cleanup-apply')?.addEventListener('click', async () => {
+      const cancelStale = state.cleanup.cancelStale && state.cleanup.data?.stalePayments;
+      if (!state.cleanup.picked.length && !cancelStale) return;
+      if (!window.confirm(`${cleanupApplyLabel()}? Отменить нельзя.`)) return;
+      state.cleanup.busy = true;
+      refreshUserTab();
+      try {
+        const result = await API.cleanup({
+          userIds: state.cleanup.picked,
+          cancelStalePayments: Boolean(cancelStale),
+        });
+        state.cleanup.data = null;
+        state.cleanup.picked = [];
+        state.cleanup.busy = false;
+        const parts = [];
+        if (result.deleted) parts.push(`удалено ${result.deleted}`);
+        if (result.cancelled) parts.push(`закрыто попыток оплаты ${result.cancelled}`);
+        await afterUserChange(parts.length ? `Готово: ${parts.join(', ')}.` : 'Готово.');
+      } catch (error) {
+        state.cleanup.busy = false;
+        state.status.user = error instanceof Error ? error.message : 'Не удалось выполнить очистку';
+        refreshUserTab();
+      }
     });
   }
 

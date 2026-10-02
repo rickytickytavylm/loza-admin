@@ -60,17 +60,24 @@
     getToken,
     setToken,
     clearToken,
-    login: async (email, password) => {
+    login: async (email, password, newPassword) => {
       const payload = await request('/auth/login', {
         method: 'POST',
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, password, ...(newPassword ? { newPassword } : {}) }),
       });
       if (payload.token) setToken(payload.token);
       return payload;
     },
+    changePassword: (currentPassword, newPassword) =>
+      request('/me/password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
     me: () => request('/me'),
     summary: () => request('/admin/summary'),
     users: () => request('/admin/users'),
+    deleteUser: (userId) =>
+      request(`/admin/users/${userId}`, { method: 'DELETE' }),
+    cleanupPreview: () => request('/admin/cleanup'),
+    cleanup: (data) =>
+      request('/admin/cleanup', { method: 'POST', body: JSON.stringify(data) }),
     payments: () => request('/admin/payments'),
     chatRooms: () => request('/admin/chat/rooms'),
     createChatRoom: (data) =>
