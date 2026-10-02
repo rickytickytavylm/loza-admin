@@ -1552,3 +1552,14 @@ button.danger {
     grid-template-columns: 1fr;
   }
 }
+
+/* On phones iOS auto-zooms when a focused field is under 16px, which shifts
+   and breaks the layout. Force 16px on controls so tapping never zooms. */
+@media (max-width: 720px) {
+  input,
+  textarea,
+  select,
+  .user-actions select {
+    font-size: 16px;
+  }
+}
