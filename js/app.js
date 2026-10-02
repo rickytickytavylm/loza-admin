@@ -147,13 +147,7 @@
         ${standaloneHint()}
         <div style="text-align:center;margin:8px 0 4px">${liveChip()}</div>
         <div class="admin-form">
-          <label>Email<input id="login-email" placeholder="email команды" autocomplete="username" /></label>
-          <label>Пароль<input id="login-password" type="password" autocomplete="current-password" /></label>
-          <div class="login-new-block" id="login-new-block" hidden>
-            <p class="login-new-note">Этот пароль записан в коде проекта, поэтому вход по нему закрыт. Придумайте новый, не короче 10 символов. Старый перестанет работать.</p>
-            <label>Новый пароль<input id="login-new" type="password" autocomplete="new-password" /></label>
-            <label>Повторите новый пароль<input id="login-new2" type="password" autocomplete="new-password" /></label>
-          </div>
+          <label>Пароль<input id="login-password" type="password" autocomplete="current-password" autofocus /></label>
           <p class="error" id="login-error" hidden></p>
           <button type="submit" id="login-submit">Войти</button>
         </div>
@@ -162,46 +156,25 @@
 
     const loginErrors = {
       TOO_MANY_ATTEMPTS: 'Слишком много попыток. Подождите 15 минут и попробуйте снова.',
-      WEAK_PASSWORD: 'Новый пароль слишком простой: нужно не меньше 10 символов.',
+      PASSWORD_CHANGE_REQUIRED: 'Пароль задаётся на сервере: добавьте переменную ADMIN_PASSWORD и перезапустите сервис.',
       USER_BLOCKED: 'Этот аккаунт заблокирован.',
     };
 
     document.getElementById('login-form').onsubmit = async (event) => {
       event.preventDefault();
       const error = document.getElementById('login-error');
-      const newBlock = document.getElementById('login-new-block');
       const submit = document.getElementById('login-submit');
       error.hidden = true;
-      let newPassword = '';
-      if (!newBlock.hidden) {
-        newPassword = document.getElementById('login-new').value;
-        if (newPassword.length < 10) {
-          error.hidden = false;
-          error.textContent = loginErrors.WEAK_PASSWORD;
-          return;
-        }
-        if (newPassword !== document.getElementById('login-new2').value) {
-          error.hidden = false;
-          error.textContent = 'Новые пароли не совпадают.';
-          return;
-        }
+      const password = document.getElementById('login-password').value;
+      if (!password) {
+        error.hidden = false;
+        error.textContent = 'Введите пароль.';
+        return;
       }
       submit.disabled = true;
       submit.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span>Входим…';
       try {
-        const payload = await API.login(
-          document.getElementById('login-email').value.trim(),
-          document.getElementById('login-password').value,
-          newPassword,
-        );
-        if (payload.user?.role === 'CURATOR') {
-          API.clearToken();
-          submit.disabled = false;
-          submit.textContent = 'Войти';
-          error.hidden = false;
-          error.textContent = 'Админка только для админов. Анонсы публикуйте в приложении, в чате «Анонсы».';
-          return;
-        }
+        const payload = await API.login('admin@loza.app', password);
         if (!['OWNER', 'ADMIN'].includes(payload.user?.role)) {
           API.clearToken();
           throw new Error('FORBIDDEN');
@@ -212,15 +185,9 @@
       } catch (loginError) {
         const code = loginError instanceof Error ? loginError.message : '';
         submit.disabled = false;
-        submit.textContent = newBlock.hidden ? 'Войти' : 'Сменить пароль и войти';
-        if (code === 'PASSWORD_CHANGE_REQUIRED') {
-          newBlock.hidden = false;
-          submit.textContent = 'Сменить пароль и войти';
-          document.getElementById('login-new').focus();
-          return;
-        }
+        submit.textContent = 'Войти';
         error.hidden = false;
-        error.textContent = loginErrors[code] || 'Неверный логин или нет прав администратора';
+        error.textContent = loginErrors[code] || 'Неверный пароль или нет прав администратора';
       }
     };
   }
@@ -300,56 +267,10 @@
             <span>${plan.priceRub} ₽ / ${plan.planDays} дн. · ${esc(plan.code)}</span>
           </article>`).join('') || '<p class="muted">Тарифы подтянутся после обновления backend</p>'}
       </div>
-    </section>
-    <section class="admin-card tab-panel">
-      <h2>Пароль для входа в админку</h2>
-      <p class="muted">Меняется только у вас. Не короче 10 символов. После смены войдите заново на других устройствах.</p>
-      <form class="admin-form" id="password-form">
-        <label>Текущий пароль<input id="pwd-current" type="password" autocomplete="current-password" required /></label>
-        <div class="admin-form-row">
-          <label>Новый пароль<input id="pwd-new" type="password" autocomplete="new-password" required /></label>
-          <label>Ещё раз<input id="pwd-new2" type="password" autocomplete="new-password" required /></label>
-        </div>
-        ${state.status.password ? `<p class="status">${esc(state.status.password)}</p>` : ''}
-        <button type="submit" id="pwd-submit">Сменить пароль</button>
-      </form>
     </section>`;
   }
 
-  function bindOverview() {
-    const form = document.getElementById('password-form');
-    if (!form) return;
-    form.onsubmit = async (event) => {
-      event.preventDefault();
-      const current = document.getElementById('pwd-current').value;
-      const next = document.getElementById('pwd-new').value;
-      if (next.length < 10) {
-        state.status.password = 'Новый пароль слишком короткий: нужно не меньше 10 символов.';
-        render();
-        return;
-      }
-      if (next !== document.getElementById('pwd-new2').value) {
-        state.status.password = 'Новые пароли не совпадают.';
-        render();
-        return;
-      }
-      const submit = document.getElementById('pwd-submit');
-      submit.disabled = true;
-      submit.innerHTML = '<span class="btn-spinner" aria-hidden="true"></span>Сохраняем…';
-      try {
-        await API.changePassword(current, next);
-        state.status.password = 'Пароль изменён.';
-      } catch (error) {
-        const code = error instanceof Error ? error.message : '';
-        state.status.password = {
-          INVALID_CREDENTIALS: 'Текущий пароль неверный.',
-          TOO_MANY_ATTEMPTS: 'Слишком много попыток. Подождите 15 минут.',
-          WEAK_PASSWORD: 'Этот пароль нельзя использовать, придумайте другой.',
-        }[code] || 'Не удалось сменить пароль.';
-      }
-      render();
-    };
-  }
+  function bindOverview() {}
 
   const PLAN_SHORT = {
     library_30: 'Медиатека',
