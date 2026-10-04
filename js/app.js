@@ -278,6 +278,12 @@
     club_90: 'Клуб 90 дней',
     club_plus_30: 'Клуб Плюс',
   };
+  const PLAN_TIER_NAME = {
+    library_30: 'Медиатека',
+    club_30: 'Клуб',
+    club_90: 'Клуб',
+    club_plus_30: 'Клуб Плюс',
+  };
   const JUNK_KINDS = ['guest', 'test', 'nologin', 'password'];
   const JUNK_TITLES = {
     guest: 'Гости из тестового режима чата',
@@ -288,6 +294,7 @@
   const USER_FILTERS = [
     ['members', 'Участники'],
     ['access', 'С доступом'],
+    ['forever', 'Бессрочный доступ'],
     ['noaccess', 'Без доступа'],
     ['waiting', 'Ждут открытия клуба'],
     ['team', 'Команда'],
@@ -297,7 +304,19 @@
   const SPINNER = '<span class="btn-spinner" aria-hidden="true"></span>';
 
   function planShort(item) {
+    if (item?.forever) return `${PLAN_TIER_NAME[item.planCode] || item.planName || 'Доступ'} бессрочно`;
     return PLAN_SHORT[item?.planCode] || item?.planName || 'Доступ';
+  }
+
+  function accessLabel(item) {
+    return item.forever ? planShort(item) : `${planShort(item)} до ${fmtDate(item.accessUntil)}`;
+  }
+
+  // Revoked or replaced access ends when it was switched off, not on its paid-up date.
+  function endedAt(item) {
+    const until = new Date(item.accessUntil || 0).getTime();
+    const cancelled = item.cancelledAt ? new Date(item.cancelledAt).getTime() : Infinity;
+    return Math.min(until, cancelled);
   }
 
   function isJunk(entry) {
@@ -344,13 +363,18 @@
     if (active.length) {
       return {
         cls: 'is-active',
-        pill: `Доступ до ${fmtDate(active[0].accessUntil)}`,
-        text: active.map((item) => `${planShort(item)} до ${fmtDate(item.accessUntil)}${item.source === 'MANUAL' ? ' (выдан вручную)' : ''}`).join(' · '),
+        pill: active[0].forever ? 'Доступ бессрочно' : `Доступ до ${fmtDate(active[0].accessUntil)}`,
+        text: active.map((item) => `${accessLabel(item)}${item.source === 'MANUAL' ? ' (выдан вручную)' : ''}`).join(' · '),
       };
     }
-    const last = (entry.subscriptions || [])[0];
+    const last = (entry.subscriptions || []).slice().sort((a, b) => endedAt(b) - endedAt(a))[0];
     if (last) {
-      return { cls: 'is-expired', pill: 'Доступ закончился', text: `${planShort(last)}, закончился ${fmtDate(last.accessUntil)}` };
+      const revoked = endedAt(last) < new Date(last.accessUntil || 0).getTime();
+      return {
+        cls: 'is-expired',
+        pill: revoked ? 'Доступ забран' : 'Доступ закончился',
+        text: `${planShort(last)}, ${revoked ? 'забран' : 'закончился'} ${fmtDate(revoked ? last.cancelledAt : last.accessUntil)}`,
+      };
     }
     return { cls: 'is-none', pill: 'Без доступа', text: 'Только бесплатная часть' };
   }
@@ -380,6 +404,7 @@
     if (filter === 'blocked') return Boolean(entry.blockedAt);
     if (junk) return false;
     if (filter === 'access') return entry.payStatus === 'active';
+    if (filter === 'forever') return activeSubsOf(entry).some((item) => item.forever);
     if (filter === 'noaccess') return entry.payStatus !== 'active';
     if (filter === 'waiting') return isWaitingClub(entry);
     return true;
@@ -431,13 +456,15 @@
       <div class="user-actions" data-manage-panel="${esc(entry.id)}" hidden>
         <div class="user-action-row">
           <select data-grant-plan="${esc(entry.id)}" aria-label="Что выдать">
+            <option value="club_30:forever">Клуб · бессрочно</option>
             <option value="club_30">Клуб · 30 дней</option>
             <option value="club_90">Клуб · 90 дней</option>
+            <option value="club_plus_30:forever">Клуб Плюс · бессрочно</option>
             <option value="club_plus_30">Клуб Плюс · 30 дней</option>
             <option value="library_30">Медиатека · 30 дней</option>
           </select>
           <button type="button" class="ok-btn" data-grant="${esc(entry.id)}">Выдать доступ</button>
-          <button type="button" class="ghost-btn" data-revoke="${esc(entry.id)}">Забрать этот доступ</button>
+          ${activeSubsOf(entry).length ? `<button type="button" class="ghost-btn" data-revoke="${esc(entry.id)}">Забрать доступ</button>` : ''}
         </div>
         ${roles.length ? `<div class="user-action-row">
           <select data-role-select="${esc(entry.id)}" aria-label="Роль">
@@ -521,7 +548,7 @@
     return `${renderCleanup()}
     <section class="admin-card tab-panel">
       <h2>Участники</h2>
-      <p class="muted">Карточка показывает, как человек входит, какой у него доступ и до какого числа, сколько он заплатил и когда заходил. Оплата через Продамус продлевается сама, пока человек не отключит подписку. Доступ, выданный здесь вручную, сам не продлевается. «Заблокировать вход» закрывает приложение целиком. Из Telegram-клуба человек сам не удаляется.</p>
+      <p class="muted">Карточка показывает, как человек входит, какой у него доступ и до какого числа, сколько он заплатил и когда заходил. Оплата через Продамус продлевается сама, пока человек не отключит подписку. Доступ, выданный здесь на 30 или 90 дней, сам не продлевается. Бессрочный действует, пока его не заберут кнопкой «Забрать доступ». «Заблокировать вход» закрывает приложение целиком. Из Telegram-клуба человек сам не удаляется.</p>
       <div class="toolbar">
         <input id="user-query" type="search" value="${esc(state.userQuery)}" placeholder="Имя, почта или телефон" autocomplete="off" />
         <select id="user-filter" aria-label="Кого показать">
@@ -1415,21 +1442,30 @@
     app.querySelectorAll('[data-grant]').forEach((btn) => {
       btn.onclick = () => {
         const select = app.querySelector(`[data-grant-plan="${btn.dataset.grant}"]`);
-        const plan = select?.value || 'club_30';
+        const [planCode, term] = (select?.value || 'club_30').split(':');
+        const forever = term === 'forever';
         runUserAction(btn, 'Выдаём…', async () => {
-          await API.grantAccess(btn.dataset.grant, { planCode: plan });
-          await afterUserChange('Доступ выдан. Если был блок, вход снова открыт.');
+          const data = await API.grantAccess(btn.dataset.grant, forever ? { planCode, forever } : { planCode });
+          const given = data?.subscription;
+          await afterUserChange(`${given?.forever
+            ? 'Доступ выдан без срока, сам он не закончится.'
+            : `Доступ выдан до ${fmtDate(given?.accessUntil)}.`} Если был блок, вход снова открыт.`);
         });
       };
     });
 
     app.querySelectorAll('[data-revoke]').forEach((btn) => {
       btn.onclick = () => {
-        const select = app.querySelector(`[data-grant-plan="${btn.dataset.revoke}"]`);
-        const plan = select?.value || 'club_30';
-        if (!window.confirm(`Забрать доступ «${PLAN_SHORT[plan] || plan}»?`)) return;
+        const entry = state.users.find((item) => item.id === btn.dataset.revoke);
+        const active = entry ? activeSubsOf(entry) : [];
+        const renews = active.some((item) => item.source === 'PRODAMUS');
+        const question = `Забрать доступ: ${active.map(accessLabel).join(', ') || 'весь'}?`;
+        const note = renews
+          ? '\n\nОплата через Продамус при этом не отменяется: при следующем списании доступ вернётся сам. Чтобы списаний не было, подписку отменяют в Продамусе.'
+          : '';
+        if (!window.confirm(question + note)) return;
         runUserAction(btn, 'Забираем…', async () => {
-          await API.revokeAccess(btn.dataset.revoke, { planCode: plan });
+          await API.revokeAccess(btn.dataset.revoke);
           await afterUserChange('Доступ забран.');
         });
       };
