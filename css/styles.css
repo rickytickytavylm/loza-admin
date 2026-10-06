@@ -1498,9 +1498,14 @@ button.danger {
 
 .user-actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   gap: 8px;
   margin-top: 12px;
+}
+
+/* display:flex above beats the plain hidden attribute, so the panel stayed open. */
+.user-actions[hidden] {
+  display: none !important;
 }
 
 .user-actions select {
