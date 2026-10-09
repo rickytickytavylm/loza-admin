@@ -434,6 +434,7 @@
     const team = entry.kind === 'team' ? `<span class="admin-badge is-team">${esc(roleLabel(entry.role))}</span>` : '';
     const waiting = isWaitingClub(entry) ? '<span class="admin-badge is-wait">Ждёт открытия клуба</span>' : '';
     const blocked = entry.blockedAt ? '<span class="admin-badge is-danger">Заблокирован</span>' : '';
+    const status = entry.publicStatus ? `<span class="admin-badge is-team">В чате: ${esc(entry.publicStatus)}</span>` : '';
     return `<article class="user-card${entry.blockedAt ? ' is-blocked' : ''}" data-user-card="${esc(entry.id)}">
       <div class="user-card-head">
         <div class="admin-user-avatar">${avatar ? `<img src="${esc(avatar)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}<span>${esc((entry.name || '?').trim()[0]?.toUpperCase() || '?')}</span></div>
@@ -444,7 +445,7 @@
         </div>
         <span class="pay-pill ${access.cls}">${esc(access.pill)}</span>
       </div>
-      <div class="user-badges">${loginBadge(entry)}${team}${waiting}${blocked}</div>
+      <div class="user-badges">${loginBadge(entry)}${team}${status}${waiting}${blocked}</div>
       <dl class="user-facts">
         <div><dt>Доступ</dt><dd>${esc(access.text)}</dd></div>
         <div><dt>Оплаты</dt><dd>${esc(paySummary(entry))}</dd></div>
@@ -465,6 +466,10 @@
           </select>
           <button type="button" class="ok-btn" data-grant="${esc(entry.id)}">Выдать доступ</button>
           ${activeSubsOf(entry).length ? `<button type="button" class="ghost-btn" data-revoke="${esc(entry.id)}">Забрать доступ</button>` : ''}
+        </div>
+        <div class="user-action-row">
+          <input type="text" maxlength="40" data-status-input="${esc(entry.id)}" value="${esc(entry.publicStatus || '')}" placeholder="Подпись в чате, например: Психолог Лозы" aria-label="Подпись в чате" />
+          <button type="button" class="ok-btn" data-status="${esc(entry.id)}">Сохранить подпись</button>
         </div>
         ${roles.length ? `<div class="user-action-row">
           <select data-role-select="${esc(entry.id)}" aria-label="Роль">
@@ -1479,6 +1484,17 @@
         runUserAction(btn, 'Меняем…', async () => {
           await API.updateUser(btn.dataset.role, { role });
           await afterUserChange(`Роль обновлена: ${roleLabel(role)}.`);
+        });
+      };
+    });
+
+    app.querySelectorAll('[data-status]').forEach((btn) => {
+      btn.onclick = () => {
+        const input = app.querySelector(`[data-status-input="${btn.dataset.status}"]`);
+        const publicStatus = String(input?.value || '').trim();
+        runUserAction(btn, 'Сохраняем…', async () => {
+          await API.updateUser(btn.dataset.status, { publicStatus: publicStatus || null });
+          await afterUserChange(publicStatus ? `Подпись в чате: ${publicStatus}.` : 'Подпись убрана.');
         });
       };
     });
