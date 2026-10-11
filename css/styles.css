@@ -1131,6 +1131,23 @@ button:active { transform: translateY(0) scale(0.985); }
   letter-spacing: -0.02em;
 }
 
+.chat-status-pill,
+.user-card-meta .admin-badge {
+  margin-left: 6px;
+  vertical-align: 1px;
+}
+
+.chat-status-pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #6d3f94;
+  background: rgba(201, 167, 255, 0.28);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
 .chat-bubble-head time {
   color: var(--muted);
   font-size: 11px;

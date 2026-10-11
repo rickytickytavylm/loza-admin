@@ -434,18 +434,17 @@
     const team = entry.kind === 'team' ? `<span class="admin-badge is-team">${esc(roleLabel(entry.role))}</span>` : '';
     const waiting = isWaitingClub(entry) ? '<span class="admin-badge is-wait">Ждёт открытия клуба</span>' : '';
     const blocked = entry.blockedAt ? '<span class="admin-badge is-danger">Заблокирован</span>' : '';
-    const status = entry.publicStatus ? `<span class="admin-badge is-team">В чате: ${esc(entry.publicStatus)}</span>` : '';
     return `<article class="user-card${entry.blockedAt ? ' is-blocked' : ''}" data-user-card="${esc(entry.id)}">
       <div class="user-card-head">
         <div class="admin-user-avatar">${avatar ? `<img src="${esc(avatar)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}<span>${esc((entry.name || '?').trim()[0]?.toUpperCase() || '?')}</span></div>
         <div class="user-card-meta">
-          <strong>${esc(entry.name || 'Без имени')}${me ? ' <small>(вы)</small>' : ''}</strong>
+          <strong>${esc(entry.name || 'Без имени')}${me ? ' <small>(вы)</small>' : ''}${entry.publicStatus ? ` <span class="admin-badge is-team">${esc(entry.publicStatus)}</span>` : ''}</strong>
           <span>${esc(entry.email)}</span>
           <span>${entry.phone ? esc(entry.phone) : 'Телефона нет'}</span>
         </div>
         <span class="pay-pill ${access.cls}">${esc(access.pill)}</span>
       </div>
-      <div class="user-badges">${loginBadge(entry)}${team}${status}${waiting}${blocked}</div>
+      <div class="user-badges">${loginBadge(entry)}${team}${waiting}${blocked}</div>
       <dl class="user-facts">
         <div><dt>Доступ</dt><dd>${esc(access.text)}</dd></div>
         <div><dt>Оплаты</dt><dd>${esc(paySummary(entry))}</dd></div>
@@ -816,11 +815,12 @@
       const name = message.author?.name || 'Участник';
       const initial = (name[0] || '?').toUpperCase();
       const team = ['OWNER', 'ADMIN', 'CURATOR'].includes(message.author?.role);
+      const status = String(message.author?.publicStatus || '').trim();
       return `<article class="chat-bubble-card${message.isPinned ? ' is-pinned' : ''}${team ? ' is-team' : ''}">
         <div class="chat-bubble-avatar">${esc(initial)}</div>
         <div class="chat-bubble-main">
           <div class="chat-bubble-head">
-            <strong>${esc(name)}</strong>
+            <strong>${esc(name)}${status ? ` <span class="chat-status-pill">${esc(status)}</span>` : ''}</strong>
             <time>${fmtDateTime(message.createdAt)}</time>
           </div>
           ${message.isPinned ? '<span class="chat-pin-badge">Закреплено</span>' : ''}
