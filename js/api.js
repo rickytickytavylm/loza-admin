@@ -4,7 +4,7 @@
 
   function normalizeApiUrl(raw) {
     let url = String(raw || '').trim();
-    if (!url) return 'https://api.loza-club.ru/api';
+    if (!url) return 'https://api.lozapsy.help/api';
     if (!/^https?:\/\//i.test(url)) url = `https://${url.replace(/^\/+/, '')}`;
     url = url.replace(/\/+$/, '');
     if (!/\/api$/i.test(url)) url = `${url}/api`;
