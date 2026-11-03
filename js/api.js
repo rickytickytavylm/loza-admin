@@ -79,6 +79,7 @@
     cleanup: (data) =>
       request('/admin/cleanup', { method: 'POST', body: JSON.stringify(data) }),
     payments: () => request('/admin/payments'),
+    liveClub: () => request('/admin/live-club'),
     chatRooms: () => request('/admin/chat/rooms'),
     createChatRoom: (data) =>
       request('/admin/chat/rooms', { method: 'POST', body: JSON.stringify(data) }),

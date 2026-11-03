@@ -9,6 +9,7 @@
     summary: null,
     users: [],
     payments: [],
+    liveClubSeats: [],
     feedPosts: [],
     movies: [],
     selectedPostId: '',
@@ -1090,10 +1091,24 @@
   }
 
   function renderLiveClubAdmin() {
+    const seats = state.liveClubSeats || [];
+    const cards = seats.map((seat) => `<article class="pay-card">
+      <div class="pay-card-top">
+        <strong>${esc(seat.name || seat.email || 'Без имени')}</strong>
+        <span class="pay-pill is-active">Оплачено</span>
+      </div>
+      <div class="pay-card-meta">
+        <span>${esc(seat.email || 'Нет почты')}</span>
+        <span>${esc(seat.phone || 'Нет телефона')}</span>
+        <span>${seat.amountRub != null ? `${seat.amountRub} ₽` : 'Сумма не пришла'}</span>
+        <span>${fmtDateTime(seat.paidAt)}</span>
+      </div>
+    </article>`).join('');
     return `<section class="admin-card tab-panel">
       <h2>Живой клуб</h2>
       <p>Москва, 3-й Сыромятнический переулок, 3/9с2. Старт 7 октября, по средам в 19:30, 1,5 часа. В группе 7 мест.</p>
-      <p class="muted">Оплатившие появятся здесь после разовой оплаты места. Подписка клуба сюда не попадает: это другой платёж.</p>
+      <p>Оплатили место: ${seats.length} из 7.</p>
+      <div class="feed-admin-list">${cards || '<p class="muted">Пока никто не оплатил место. Подписка клуба сюда не попадает.</p>'}</div>
     </section>`;
   }
 
@@ -1991,10 +2006,11 @@
   }
 
   async function loadDashboard() {
-    const [summary, users, payments, chats, feed, movies, content] = await Promise.all([
+    const [summary, users, payments, liveClub, chats, feed, movies, content] = await Promise.all([
       API.summary(),
       API.users(),
       API.payments().catch(() => ({ payments: [] })),
+      API.liveClub().catch(() => ({ seats: [] })),
       API.chatRooms(),
       API.feedPosts().catch(() => ({ posts: [] })),
       API.movies().catch(() => ({ movies: [] })),
@@ -2003,6 +2019,7 @@
     state.summary = summary;
     state.users = users.users || [];
     state.payments = payments.payments || [];
+    state.liveClubSeats = liveClub.seats || [];
     state.chatRooms = chats.rooms || [];
     state.feedPosts = feed.posts || [];
     state.movies = movies.movies || [];
