@@ -200,6 +200,7 @@
       { id: 'content', label: 'Медиатека' },
       { id: 'users', label: 'Люди' },
       { id: 'payments', label: 'Оплаты' },
+      { id: 'live', label: 'Живой клуб' },
       { id: 'chats', label: 'Чаты' },
     ];
     return `<nav class="admin-tabs" aria-label="Разделы">
@@ -227,10 +228,10 @@
       content: [[s.content, 'Материалы'], [s.movies, 'Киноклуб']],
     }[state.tab] || [[s.users, 'Пользователи'], [s.paidUsers, 'С доступом']];
 
-    return `<section class="admin-stats admin-stats-compact">
+      return `<section class="admin-stats admin-stats-compact">
       ${cards.map(([value, label]) => `<article><strong>${value ?? '—'}</strong><span>${label}</span></article>`).join('')}
-    </section>`;
-  }
+      </section>`;
+    }
 
   function renderOverview() {
     const ops = state.summary?.ops || {};
@@ -267,8 +268,8 @@
             <span>${plan.priceRub} ₽ / ${plan.planDays} дн. · ${esc(plan.code)}</span>
           </article>`).join('') || '<p class="muted">Тарифы подтянутся после обновления backend</p>'}
       </div>
-    </section>`;
-  }
+      </section>`;
+    }
 
   function bindOverview() {}
 
@@ -426,7 +427,7 @@
   }
 
   function renderUserCard(entry) {
-    const avatar = entry.avatarUrl || '';
+      const avatar = entry.avatarUrl || '';
     const access = accessSummary(entry);
     const me = state.user?.id === entry.id;
     const canDelete = !me && entry.kind !== 'team';
@@ -435,15 +436,15 @@
     const waiting = isWaitingClub(entry) ? '<span class="admin-badge is-wait">Ждёт открытия клуба</span>' : '';
     const blocked = entry.blockedAt ? '<span class="admin-badge is-danger">Заблокирован</span>' : '';
     return `<article class="user-card${entry.blockedAt ? ' is-blocked' : ''}" data-user-card="${esc(entry.id)}">
-      <div class="user-card-head">
+        <div class="user-card-head">
         <div class="admin-user-avatar">${avatar ? `<img src="${esc(avatar)}" alt="" loading="lazy" decoding="async" referrerpolicy="no-referrer" onerror="this.remove()" />` : ''}<span>${esc((entry.name || '?').trim()[0]?.toUpperCase() || '?')}</span></div>
-        <div class="user-card-meta">
+          <div class="user-card-meta">
           <strong>${esc(entry.name || 'Без имени')}${me ? ' <small>(вы)</small>' : ''}${entry.publicStatus ? ` <span class="admin-badge is-team">${esc(entry.publicStatus)}</span>` : ''}</strong>
-          <span>${esc(entry.email)}</span>
+            <span>${esc(entry.email)}</span>
           <span>${entry.phone ? esc(entry.phone) : 'Телефона нет'}</span>
-        </div>
+          </div>
         <span class="pay-pill ${access.cls}">${esc(access.pill)}</span>
-      </div>
+        </div>
       <div class="user-badges">${loginBadge(entry)}${team}${waiting}${blocked}</div>
       <dl class="user-facts">
         <div><dt>Доступ</dt><dd>${esc(access.text)}</dd></div>
@@ -480,8 +481,8 @@
           <button type="button" class="${entry.blockedAt ? 'ok-btn' : 'ghost-btn'}" data-block="${esc(entry.id)}" data-blocked="${entry.blockedAt ? '1' : '0'}">${entry.blockedAt ? 'Разблокировать' : 'Заблокировать вход'}</button>
           ${canDelete ? `<button type="button" class="danger-btn" data-delete-user="${esc(entry.id)}">Удалить аккаунт</button>` : ''}
         </div>`}
-      </div>
-    </article>`;
+        </div>
+      </article>`;
   }
 
   function renderUserList() {
@@ -1088,12 +1089,21 @@
     </section>`;
   }
 
+  function renderLiveClubAdmin() {
+    return `<section class="admin-card tab-panel">
+      <h2>Живой клуб</h2>
+      <p>Москва, 3-й Сыромятнический переулок, 3/9с2. Старт 7 октября, по средам в 19:30, 1,5 часа. В группе 7 мест.</p>
+      <p class="muted">Оплатившие появятся здесь после разовой оплаты места. Подписка клуба сюда не попадает: это другой платёж.</p>
+    </section>`;
+  }
+
   function renderTabContent() {
     if (state.tab === 'overview') return renderOverview();
     if (state.tab === 'announce') return renderAnnounce();
     if (state.tab === 'content') return renderContent();
     if (state.tab === 'users') return renderUsers();
     if (state.tab === 'payments') return renderPayments();
+    if (state.tab === 'live') return renderLiveClubAdmin();
     if (state.tab === 'chats') return selectedRoom() ? renderChatThread(selectedRoom()) : renderChatRoomList();
     if (state.tab === 'movies') {
       state.tab = 'content';
@@ -1118,7 +1128,7 @@
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           ${liveChip()}
-          <button type="button" id="logout-btn">Выйти</button>
+        <button type="button" id="logout-btn">Выйти</button>
         </div>
       </header>
       ${renderTabs()}
