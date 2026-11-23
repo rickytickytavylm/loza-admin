@@ -602,7 +602,7 @@
       return `<article class="feed-admin-card">
         <div class="feed-admin-top">
           <div>
-            <strong>${esc(post.title || 'Без заголовка')}</strong>
+            <strong>${esc(post.title || 'Без заголовка')}${post.isPublished ? '' : ' · Черновик'}</strong>
             <span class="muted">${esc(post.author?.name || 'Лоза')} · ${fmtDateTime(post.createdAt)} · ${post._count?.comments || 0} комм.</span>
           </div>
           <div class="feed-admin-actions">
@@ -617,7 +617,8 @@
 
     return `
       <section class="admin-card tab-panel">
-        <h2>Пост в ленту приложения</h2>
+        <h2>Добавить в блог</h2>
+        <label>Раздел <select id="blog-create-kind"><option value="post">Лента</option><option value="video">Видео</option><option value="article">Статьи</option><option value="question">Вопросы</option></select></label>
         <p class="muted">Лента клуба. Картинку лучше прикрепить файлом. Ссылка vk.com/photo не подойдёт, нужна прямая картинка (jpg/png/webp или userapi.com). Видео: отдельное поле Кинескоп.</p>
         <form class="admin-form" id="post-form">
           <label>Заголовок, его видят в ленте<input id="post-title" value="${esc(p.title)}" /></label>
@@ -659,6 +660,7 @@
   }
 
   function renderPostEditor(post) {
+    if (post.kind && post.kind !== 'post') return renderBlogEditor(post);
     const comments = (post.comments || []).map((comment) => `
       <article class="feed-comment-card">
         <div class="feed-comment-top">
@@ -1683,6 +1685,63 @@
     });
   }
 
+  function renderBlogEditor(p) {
+    const article = p.kind === 'article';
+    const text = article ? (p.blocks || []).map(b => (b.type === 'heading' ? '# ' : '') + b.text).join('\n\n') : p.body;
+    const chapters = (p.chapters || []).map(c => `${Math.floor(c.seconds / 60)}:${String(c.seconds % 60).padStart(2, '0')} ${c.title}`).join('\n');
+    return `<section class="admin-card tab-panel"><button id="blog-back" class="chat-back-btn">← К публикациям</button>
+      <h2>${({ video: 'Видео', question: 'Вопрос', article: 'Статья' })[p.kind]} · ${p.isPublished ? 'Опубликовано' : 'Черновик'}</h2>
+      <form class="admin-form" id="blog-edit">
+        <label>Заголовок<input name="title" value="${esc(p.title || '')}"></label>
+        <label>Описание для карточки<textarea name="summary">${esc(p.summary || '')}</textarea></label>
+        <label>${article ? 'Текст. Пустая строка — абзац, # в начале — подзаголовок' : 'Текст материала'}<textarea name="body" rows="9">${esc(text || '')}</textarea></label>
+        <label>${article ? 'Ссылка на оригинал' : 'Ссылка Kinescope'}<input name="url" type="url" value="${esc((article ? p.sourceUrl : p.videoUrl) || '')}"></label>
+        ${p.kind === 'video' ? `<label>Главы: время и название, одна на строку<textarea name="chapters" rows="5">${esc(chapters)}</textarea></label>` : ''}
+        <label>Обложка<input name="imageUrl" value="${esc(p.imageUrl || '')}"></label><input type="file" name="cover" accept="image/*">
+        <details><summary>Предпросмотр</summary><div data-blog-preview></div></details>
+        <label><input name="published" type="checkbox" ${p.isPublished ? 'checked' : ''}> Опубликовано</label>
+        <button>Сохранить</button><p role="status"></p></form></section>`;
+  }
+
+  function bindBlogEditor(form) {
+    const p = selectedFeedPost();
+    const f = form.elements;
+    const status = form.querySelector('[role=status]');
+    document.getElementById('blog-back').onclick = () => { state.selectedPostId = ''; render(); };
+    const preview = () => { form.querySelector('[data-blog-preview]').innerHTML = `<h3>${esc(f.title.value)}</h3><p>${esc(f.summary.value)}</p><p>${esc(f.body.value).replace(/\n/g, '<br>')}</p>`; };
+    form.addEventListener('input', preview);
+    preview();
+    f.cover.onchange = async () => {
+      if (!f.cover.files[0]) return;
+      form.querySelector('button').disabled = true;
+      try { f.imageUrl.value = (await API.uploadImage(f.cover.files[0])).url; }
+      catch (e) { status.textContent = e.message; }
+      finally { form.querySelector('button').disabled = false; }
+    };
+    form.onsubmit = async (event) => {
+      event.preventDefault();
+      try {
+        const data = { title: f.title.value.trim(), summary: f.summary.value.trim(), imageUrl: f.imageUrl.value.trim() || null, isPublished: f.published.checked };
+        if (p.kind === 'article') {
+          data.sourceUrl = f.url.value.trim() || null;
+          data.blocks = f.body.value.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean).map(s => ({ type: s.startsWith('# ') ? 'heading' : 'paragraph', text: s.replace(/^# /, '') }));
+        } else {
+          data.body = f.body.value.trim();
+          data.videoUrl = f.url.value.trim() || null;
+          if (f.chapters) data.chapters = f.chapters.value.split('\n').filter(s => s.trim()).map(line => {
+            const m = line.trim().match(/^(\d+):([0-5]\d)\s+(.+)$/);
+            if (!m) throw Error('Формат главы: 20:20 Название');
+            return { seconds: Number(m[1]) * 60 + Number(m[2]), title: m[3] };
+          });
+        }
+        const { post } = await API.updateBlog(p.id, data);
+        Object.assign(p, post);
+        render();
+        document.querySelector('#blog-edit [role=status]').textContent = 'Сохранено';
+      } catch (e) { status.textContent = e.message; }
+    };
+  }
+
   async function reloadFeedPosts() {
     const payload = await API.feedPosts();
     state.feedPosts = payload.posts || [];
@@ -1694,6 +1753,20 @@
   }
 
   function bindPosts() {
+    const picker = document.getElementById('blog-create-kind');
+    if (picker) picker.onchange = async () => {
+      if (picker.value === 'post') return;
+      picker.disabled = true;
+      try {
+        const { post } = await API.createBlog({ kind: picker.value });
+        state.feedPosts.unshift(post);
+        state.selectedPostId = post.id;
+        state.status.post = '';
+        render();
+      } catch (e) { picker.value = 'post'; picker.disabled = false; window.alert(e.message); }
+    };
+    const blogForm = document.getElementById('blog-edit');
+    if (blogForm) { bindBlogEditor(blogForm); return; }
     const editForm = document.getElementById('post-edit-form');
     if (editForm) {
       document.getElementById('post-back')?.addEventListener('click', () => {

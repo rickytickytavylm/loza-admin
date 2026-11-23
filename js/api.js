@@ -97,6 +97,8 @@
     createPost: (data) =>
       request('/feed', { method: 'POST', body: JSON.stringify(data) }),
     feedPosts: () => request('/admin/feed'),
+    createBlog: (data) => request('/admin/blog', { method: 'POST', body: JSON.stringify(data) }),
+    updateBlog: (id, data) => request(`/admin/blog/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(data) }),
     updatePost: (postId, data) =>
       request(`/admin/feed/${postId}`, { method: 'PATCH', body: JSON.stringify(data) }),
     deletePost: (postId) =>
